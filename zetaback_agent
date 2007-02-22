@@ -1,0 +1,87 @@
+#!/usr/bin/perl
+
+use strict;
+use Getopt::Long;
+use Data::Dumper;
+
+my %conf;
+my $CONF = q^/etc/zetaback_agent.conf^;
+use vars qw/$LIST $FULL $SNAP $ZFS $BASE/;
+
+GetOptions(
+  "c=s" => \$CONF,
+  "l"   => \$LIST,
+  "z=s" => \$ZFS,
+  "d=s" => \$SNAP,
+  "f=s" => \$FULL,
+  "i=s" => \$BASE,
+);
+
+# Read out config in
+open(CONF, "<$CONF");
+while(<CONF>) { /^\s*([^#](?:\S*)?)\s*=\s*(\S+)/ && ($conf{lc($1)} = $2); }
+close(CONF);
+
+sub zfs_agent_remove_snap {
+  my $target = $ZFS . '@';
+  die "zfs_agent_remove_snap: insufficient args\n" unless($ZFS && $SNAP);
+  if($SNAP eq '__zb_incr' or
+     $SNAP =~ /__zb_full_\d+/) {
+    $target .= $SNAP;
+  }
+  else {
+    die "zfs_agent_remove_snap: illegal snap: $SNAP\n";
+  }
+  `/usr/sbin/zfs destroy $target`;
+}
+
+sub zfs_agent_perform_full {
+  my $target = $ZFS . '@__zb_full_' . $FULL;
+  unless($ZFS && $FULL =~ /^\d+$/) {
+    die "zfs_agent_perform_full: bad fs or snap name\n"
+  }
+  `/usr/sbin/zfs snapshot $target`;
+  my @cmd = ("/usr/sbin/zfs", "send", $target);
+  exec { $cmd[0] } @cmd;
+  exit;
+}
+
+sub zfs_agent_perform_incremental {
+  my $target = $ZFS . '@__zb_incr';
+  my $base = $ZFS . '@__zb_full_' . $BASE;
+  unless($ZFS && $BASE) {
+    die "zfs_agent_perform_incremental: bad args\n"
+  }
+  `/usr/sbin/zfs snapshot $target`;
+  my @cmd = ("/usr/sbin/zfs", "send", "-i", $base, $target);
+  exec { $cmd[0] } @cmd;
+  exit;
+}
+
+sub zfs_agent_list {
+  my %zfs;
+  open(ZFSLIST, "/usr/sbin/zfs list -H |");
+  while(<ZFSLIST>) {
+    chomp;
+    my @line = split /\t/;
+    if($line[0] =~ /$conf{pattern}/) {
+      if($line[0] =~ /(\S+)\@([^\@]+)$/) {
+        $zfs{$1} ||= [];
+        push @{$zfs{$1}}, $2;
+      }
+      else {
+        $zfs{$line[0]} ||= [];
+      }
+    }
+  }
+  close(ZFSLIST);
+
+  foreach my $fs (sort keys %zfs) {
+    print "$fs [".join(',',@{$zfs{$fs}})."]\n";
+  }
+}
+
+if($LIST) { zfs_agent_list(); exit; }
+if($ZFS && $SNAP) { zfs_agent_remove_snap(); exit; }
+if($ZFS && $FULL) { zfs_agent_perform_full(); exit; }
+if($ZFS && $BASE) { zfs_agent_perform_incremental(); exit; }
