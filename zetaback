@@ -6,7 +6,8 @@ use MIME::Base64;
 use POSIX qw/strftime/;
 use Data::Dumper;
 
-use vars qw/$CONF %conf $BLOCKSIZE $DEBUG $HOST $BACKUP $SUMMARY $RESTORE
+use vars qw/$CONF %conf $BLOCKSIZE $DEBUG $HOST $BACKUP $RESTORE
+            $LIST $SUMMARY $SUMMARY_EXT
             $EXPUNGE $NUETERED $ZFS/;
 $CONF = q^/var/spool/zfs_backups/zetaback.conf^;
 $BLOCKSIZE = 1024*64;
@@ -19,7 +20,9 @@ GetOptions(
   "z=s" => \$ZFS,
   "c=s" => \$CONF,
   "b"   => \$BACKUP,
+  "l"   => \$LIST,
   "s"   => \$SUMMARY,
+  "sx"  => \$SUMMARY_EXT,
   "r"   => \$RESTORE,
   "d"   => \$DEBUG,
   "n"   => \$NUETERED,
@@ -236,16 +239,21 @@ sub show_backups($$$) {
          !($disk eq $diskpat ||        # be a specific match or a
            ($diskpat =~ /^\/(.+)\/$/ && $disk =~ /$1/))); # regex
     # We want to see this one
-    print "$disk:\n";
-    print "\tLast Full: ". ($info->{last_full} ? strftime($tf, localtime($info->{last_full})) : "Never") . "\n";
-    if($info->{last_full} < $info->{last_incremental}) {
-      print "\tLast Incr: ". strftime($tf, localtime($info->{last_incremental})). "\n";
+    print "$host:$disk\n";
+    next unless($SUMMARY || $SUMMARY_EXT);
+    if($SUMMARY_EXT) {
+      print "\tLast Full: ". ($info->{last_full} ? strftime($tf, localtime($info->{last_full})) : "Never") . "\n";
+      if($info->{last_full} < $info->{last_incremental}) {
+        print "\tLast Incr: ". strftime($tf, localtime($info->{last_incremental})). "\n";
+      }
     }
     my @backup_points = (keys %{$info->{full}}, keys %{$info->{incremental}});
     @backup_points = sort { $a <=> $b } @backup_points;
-    print "\tBackups available:\n";
+    unless ($SUMMARY_EXT) {
+      @backup_points = (pop @backup_points);
+    }
     foreach (@backup_points) {
-      print "\t\t" . strftime($tf, localtime($_)) . " [$_] ";
+      print "\t" . strftime($tf, localtime($_)) . " [$_] ";
       if(exists($info->{full}->{$_})) {
         my @st = stat($info->{full}->{$_}->{file});
         print "FULL " . pretty_size($st[7]);
@@ -345,7 +353,7 @@ foreach my $host (grep { $_ ne "default" } keys %conf) {
   if($BACKUP) {
     plan_and_run($host, $store, $ZFS);
   }
-  if($SUMMARY) {
+  if($LIST || $SUMMARY || $SUMMARY_EXT) {
     show_backups($host, $store, $ZFS);
   }
   if($EXPUNGE) {
