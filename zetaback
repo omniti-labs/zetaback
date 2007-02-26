@@ -340,9 +340,17 @@ sub perform_restore() {
 
 sub zfs_restore_part($$$) {
   my ($host, $fs, $file) = @_;
+  my $command;
+  if(exists($conf{$host})) {
+    my $agent = config_get($host, 'agent');
+    $command = "$agent -r -z $fs";
+  }
+  else {
+    $command = "/usr/sbin/zfs recv $fs";
+  }
   open(DUMP, "gzip -dfc $file |");
   eval {
-    open(RECEIVER, "| ssh $host /sbin/zfs recv $fs");
+    open(RECEIVER, "| ssh $host $command");
     my $buffer;
     while(my $len = sysread(DUMP, $buffer, $BLOCKSIZE)) {
       if(syswrite(RECEIVER, $buffer, $len) != $len) {

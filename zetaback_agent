@@ -6,11 +6,12 @@ use Data::Dumper;
 
 my %conf;
 my $CONF = q^/etc/zetaback_agent.conf^;
-use vars qw/$LIST $FULL $SNAP $ZFS $BASE/;
+use vars qw/$LIST $FULL $SNAP $ZFS $BASE $RESTORE/;
 
 GetOptions(
   "c=s" => \$CONF,
   "l"   => \$LIST,
+  "r"   => \$RESTORE,
   "z=s" => \$ZFS,
   "d=s" => \$SNAP,
   "f=s" => \$FULL,
@@ -81,7 +82,18 @@ sub zfs_agent_list {
   }
 }
 
+sub zfs_agent_perform_restore {
+  my $fs = $ZFS;
+  unless($ZFS && $RESTORE) {
+    die "zfs_agent_perform_restore: bad state\n";
+  }
+  my @cmd = ("/usr/sbin/zfs", "recv", $fs);
+  exec { $cmd[0] } @cmd;
+  exit;
+}
+
 if($LIST) { zfs_agent_list(); exit; }
 if($ZFS && $SNAP) { zfs_agent_remove_snap(); exit; }
 if($ZFS && $FULL) { zfs_agent_perform_full(); exit; }
 if($ZFS && $BASE) { zfs_agent_perform_incremental(); exit; }
+if($ZFS && $RESTORE) { zfs_agent_perform_restore(); exit; }
