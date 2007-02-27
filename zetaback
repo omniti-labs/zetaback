@@ -6,11 +6,14 @@ use MIME::Base64;
 use POSIX qw/strftime/;
 use Data::Dumper;
 
-use vars qw/$CONF %conf $BLOCKSIZE $DEBUG $HOST $BACKUP
+use vars qw/%conf $version_string
+            $CONF $BLOCKSIZE $DEBUG $HOST $BACKUP
             $RESTORE $RESTORE_HOST $RESTORE_ZFS $TIMESTAMP
             $LIST $SUMMARY $SUMMARY_EXT
-            $EXPUNGE $NUETERED $ZFS/;
-$CONF = q^/var/spool/zfs_backups/zetaback.conf^;
+            $EXPUNGE $NUETERED $ZFS
+            $VERSION/;
+$version_string = '0.1';
+$CONF = q^/etc/zetaback.conf^;
 $BLOCKSIZE = 1024*64;
 
 $conf{'default'}->{'time_format'} = "%Y-%m-%d %H:%M:%S";
@@ -31,7 +34,13 @@ GetOptions(
   "d"       => \$DEBUG,
   "n"       => \$NUETERED,
   "x"       => \$EXPUNGE,
+  "v"       => \$VERSION,
 );
+
+if($VERSION) {
+  print "zetaback: $version_string\n";
+  exit 0;
+}
 
 sub parse_config() {
   local($/);

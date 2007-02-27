@@ -4,9 +4,10 @@ use strict;
 use Getopt::Long;
 use Data::Dumper;
 
-my %conf;
-my $CONF = q^/etc/zetaback_agent.conf^;
-use vars qw/$LIST $FULL $SNAP $ZFS $BASE $RESTORE/;
+use vars qw/%conf $version_string
+            $CONF $LIST $FULL $SNAP $ZFS $BASE $RESTORE $VERSION/;
+$version_string = '0.1';
+$CONF = q^/etc/zetaback_agent.conf^;
 
 GetOptions(
   "c=s" => \$CONF,
@@ -16,7 +17,13 @@ GetOptions(
   "d=s" => \$SNAP,
   "f=s" => \$FULL,
   "i=s" => \$BASE,
+  "v"   => \$VERSION,
 );
+
+if($VERSION) {
+  print "zetaback_agent: $version_string\n";
+  exit 0;
+}
 
 # Read out config in
 open(CONF, "<$CONF");
