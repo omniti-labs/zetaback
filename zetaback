@@ -1,23 +1,44 @@
-#!/usr/bin/perl
+z#!/usr/bin/perl
 
 use strict;
 use Getopt::Long;
 use MIME::Base64;
 use POSIX qw/strftime/;
-use Data::Dumper;
+use Pod::Usage;
 
 use vars qw/%conf $version_string
             $CONF $BLOCKSIZE $DEBUG $HOST $BACKUP
             $RESTORE $RESTORE_HOST $RESTORE_ZFS $TIMESTAMP
             $LIST $SUMMARY $SUMMARY_EXT
             $EXPUNGE $NUETERED $ZFS
-            $VERSION/;
+            $VERSION $HELP/;
 $version_string = '0.1';
 $CONF = q^/etc/zetaback.conf^;
 $BLOCKSIZE = 1024*64;
 
 $conf{'default'}->{'time_format'} = "%Y-%m-%d %H:%M:%S";
 $conf{'default'}->{'retention'} = 14 * 86400;
+
+=pod
+
+=head1 NAME
+
+zetaback - perform backup, restore and retention policies for ZFS backups.
+
+=head1 SYNOPSIS
+
+  zetaback -v
+
+  zetaback [-l | -s | -sx] [-c conf] [-d] [-h host] [-z zfs]
+
+  zetaback -b [-x] [-c conf] [-d] [-n] [-h host] [-z zfs]
+
+  zetaback -x [-b] [-c conf] [-d] [-n] [-h host] [-z zfs]
+
+  zetaback -r [-c conf] [-d] [-n] [-h host] [-z zfs] [-t timestamp]
+              [-rhost host] [-rzfs fs]
+
+=cut
 
 GetOptions(
   "h=s"     => \$HOST,
@@ -30,12 +51,146 @@ GetOptions(
   "r"       => \$RESTORE,
   "t=i"     => \$TIMESTAMP,
   "rhost=s" => \$RESTORE_HOST,
-  "rfs=s"   => \$RESTORE_ZFS,
+  "rzfs=s"  => \$RESTORE_ZFS,
   "d"       => \$DEBUG,
   "n"       => \$NUETERED,
   "x"       => \$EXPUNGE,
   "v"       => \$VERSION,
 );
+
+# actions allowed together 'x' and 'b' all others are exclusive:
+my $actions = 0;
+$actions++ if($BACKUP || $EXPUNGE);
+$actions++ if($RESTORE);
+$actions++ if($LIST);
+$actions++ if($SUMMARY);
+$actions++ if($SUMMARY_EXT);
+$actions++ if($VERSION);
+if($actions != 1) {
+  pod2usage({ -verbose => 0 });
+  exit -1;
+}
+
+=pod
+
+=head1 DESCRIPTION
+
+The B<zetaback> program is orchiestrates the backup (either full or
+incremental) of remote ZFS filesysetms to a local store.  It handles
+frequency requirements for both full and incemental backups as well
+as retention policies.  In addition to backups, the B<zetaback> tool
+allows for the restore of any backup to a specified host and zfs
+filesystem.
+
+=head1 OPTIONS
+
+The non-optional action command line arguments define the invocation purpose
+of B<zetaback>.  All other options are optional and refine the target
+of the action specified.
+
+=head2 Generic Options
+
+The following options have the same meaning over several actions:
+
+=over
+
+=item -c <conf>
+
+Use the specified file as the configuration file.  The default file, if
+none is specified is /etc/zetaback.conf.
+
+=item -d
+
+Enable debugging output.
+
+=item -n
+
+Don't actually perform any remote commands or expunging.  This is useful with
+the -d options to ascertain what would be done if the command was executed
+without the -n option.
+
+=item -t <timestamp>
+
+Used during the restore process to Specify a point in time selection of a
+backup image.  If omitted, the command becomes interactive.  This timestamp
+is a UNIX timestamp abd is shown in output of -s and -sx actions.
+
+=item -rhost <host>
+
+Specifiy the remote host that is the target for a restore operation.  If
+omitted the command becomes interactive.
+
+=item -rzfs <zfs>
+
+Specifiy the remote ZFS filesystem that is the target for a restore
+operation.  If omitted the command becomes interactive.
+
+=item -h <host>
+
+Filters the operation to the host specified.  If <host> is the of the form
+/patterm/, it matches 'pattern' as a perl regular expression against available
+hosts.  If this option is omitted, no limit is enforced and all hosts are
+used for the action.
+
+=item -z <zfs>
+
+Filters the operation to the zfs filesystem specified.  If <zfs> is of the
+form /pattern/, it matches 'pattern' as a perl regular expression against
+available zfs filesystems.  If this option is omitted, no filter is enforced
+and all zfs filesystems are used for the action.
+
+=back
+
+=head2 Actions
+
+=over
+
+=item -v
+
+Show the version.
+
+=item -l
+
+Show a brief listing of available backups.
+
+=item -s
+
+Like -l, -s will show a list of backups but provides also the most recent
+backup information including timestamp type (full or incremental) and the
+size on disk.
+
+=item -sx
+
+Shows a extended summary.  In addition to the output provided by the -s
+action, the -sx action will show detail of each availble backup and note
+the more recent full backup and incremental bakcup if such an incremental
+backup exists more recent than the full backup.
+
+=item -b
+
+Performs a backup.  This option will investigate all eligible hosts, query
+the available filesystems from the remote agent and determine if any such
+filesystems require a new full or incremental backup to be taken.  This
+option may be combined with the -x option (to clean up afterwards).
+
+=item -x
+
+Perform an expunge.  This option will determine which, if any, of the local
+backups may be deleted given the retention policy specified in the
+configuration.
+
+=item -r
+
+Perform a restore.  This option will operate on the specified backup and
+restore it to the a zfs filesystem specified with -rzfs on the host specified
+with the -rhost option.  The -h, -z and -t options may be used to filter
+the source backup list.  If the filtered list contains more than one
+source backup image, the command will act interactively.  If the -rhost
+and -rzfs command are not specified, the command will act interactively.
+
+=back
+
+=cut
 
 if($VERSION) {
   print "zetaback: $version_string\n";
@@ -357,18 +512,21 @@ sub zfs_restore_part($$$) {
   else {
     $command = "/usr/sbin/zfs recv $fs";
   }
-  open(DUMP, "gzip -dfc $file |");
-  eval {
-    open(RECEIVER, "| ssh $host $command");
-    my $buffer;
-    while(my $len = sysread(DUMP, $buffer, $BLOCKSIZE)) {
-      if(syswrite(RECEIVER, $buffer, $len) != $len) {
-        die "$!";
+  print " => piping $file to $command\n" if($DEBUG);
+  unless($NUETERED) {
+    open(DUMP, "gzip -dfc $file |");
+    eval {
+      open(RECEIVER, "| ssh $host $command");
+      my $buffer;
+      while(my $len = sysread(DUMP, $buffer, $BLOCKSIZE)) {
+        if(syswrite(RECEIVER, $buffer, $len) != $len) {
+          die "$!";
+        }
       }
-    }
-  };
-  close(DUMP);
-  close(RECEIVER);
+    };
+    close(DUMP);
+    close(RECEIVER);
+  }
   return $?;
 }
 
@@ -499,14 +657,35 @@ else {
     $store =~ s/%h/$host/g;;
     mkdir $store if(! -d $store);
   
-    if($BACKUP) {
-      plan_and_run($host, $store, $ZFS);
-    }
     if($LIST || $SUMMARY || $SUMMARY_EXT) {
       show_backups($host, $store, $ZFS);
+    }
+    if($BACKUP) {
+      plan_and_run($host, $store, $ZFS);
     }
     if($EXPUNGE) {
       perform_retention($host, $store);
     }
   }
-} 
+}
+
+exit 0;
+
+=pod
+
+=head1 FILES
+
+=over
+
+=item /etc/zetaback.conf
+
+The main zetaback configuration file.  The location of the file can be
+specified on the command line with the -c flag. 
+
+=back
+
+=head1 SEE ALSO
+
+zetaback.conf(5), zetaback_agent(1), zetback_agent.conf(5)
+
+=cut
