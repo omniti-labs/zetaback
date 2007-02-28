@@ -395,13 +395,29 @@ sub perform_retention($$) {
   }
 }
 
-sub choose($@) {
-  my($name, @list) = @_;
+sub __default_sort($$) { return $_[0] cmp $_[1]; }
+    
+sub choose($$;$) {
+  my($name, $obj, $sort) = @_;
+  $sort ||= \&__default_sort;;
+  my @list;
+  my $hash;
+  if(ref $obj eq 'ARRAY') {
+    @list = sort { $sort->($a,$b); } (@$obj);
+    map { $hash->{$_} = $_; } @list;
+  }
+  elsif(ref $obj eq 'HASH') {
+    @list = sort { $sort->($a,$b); } (keys %$obj);
+    $hash = $obj;
+  }
+  else {
+    die "choose passed bad object: " . ref($obj) . "\n";
+  }
   return $list[0] if(scalar(@list) == 1);
   print "\n";
   my $i = 1;
   for (@list) {
-    printf " %3d) $_\n", $i++;
+    printf " %3d) $hash->{$_}\n", $i++;
   }
   my $selection = 0;
   while($selection !~ /^\d+$/ or
@@ -410,7 +426,7 @@ sub choose($@) {
     print "$name: ";
     chomp($selection = <>);
   }
-  return $list[$selection - 1];
+  return $hash->{$list[$selection - 1]};
 }
 
 sub backup_chain($$) {
@@ -466,10 +482,16 @@ sub perform_restore() {
   }
 
   # Here goes the possibly interactive dialog
-  my $host = choose("Restore from host", keys %source);
-  my $disk = choose("Restore from ZFS", keys %{$source{$host}});
-  my $timestamp = choose("Restore as of timestamp", @{$source{$host}->{$disk}});
+  my $host = choose("Restore from host",  [keys %source]);
+  my $disk = choose("Restore from ZFS", [keys %{$source{$host}}]);
+  
+  # Times are special.  We build a human readable form and use a numerical
+  # sort function instead of the default lexical one.
+  my %times;
   my $tf = config_get($host, 'time_format');
+  map { $times{$_} = strftime($tf, localtime($_)); } @{$source{$host}->{$disk}};
+  my $timestamp = choose("Restore as of timestamp", \%times,
+                         sub { $_[0] <=> $_[1]; });
 
   my $store = config_get($host, 'store');
   $store =~ s/%h/$host/g;;
