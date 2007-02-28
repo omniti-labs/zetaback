@@ -197,6 +197,106 @@ if($VERSION) {
   exit 0;
 }
 
+=pod
+
+=head1 CONFIGURATION
+
+The zetaback configuration file consists of a default stanza, containing
+settings that can be overridden on a per-host basis.  A stanza begins
+either with the string 'default', or a fully-qualified hostname, with 
+settings enclosed in braces ({}).  Single-line comments begin with a hash
+('#'), and whitespace is ignored, so feel free to indent for better
+readability.  Every host to be backed up must have a host stanza in the
+configuration file.
+
+=head2 Settings
+
+The following settings are valid in both the default and host scopes:
+
+=over
+
+=item store
+
+The base directory under which to keep backups.  An interpolated variable
+'%h' can be used, which expands to the hostname.  There is no default for
+this setting.
+
+=item agent
+
+The location of the zetaback_agent binary on the host.  There is no default
+for this setting.
+
+=item time_format
+
+All timestamps within zetaback are in Unix timestamp format.  This setting
+provides a string for formatting all timestamps on output.  The sequences
+available are identical to those in strftime(3).  If not specified, the
+default is '%Y-%m-%d %H:%M:%S'.
+
+=item backup_interval
+
+The frequency (in seconds) at which to perform incremental backups.  An 
+incremental backup will be performed if the current time is more than 
+backup_interval since the last incremental backup.  If there is no full backup
+for a particular filesystem, then a full backup is performed.  There is no 
+default for this setting.
+
+=item full_interval
+
+The frequency (in seconds) at which to perform full backups.  A full backup will
+be performed if the current time is more than full_interval since the last full 
+backup.
+
+=item retention
+
+The retention time (in seconds) for backups.  Defaults to (14 * 86400), or two
+weeks.
+
+=back
+
+=head1 CONFIGURATION EXAMPLES
+
+=head2 Uniform hosts
+
+This config results in backups stored in /var/spool/zfs_backups, with a
+subdirectory for each host.  Incremental backups will be performed
+approximately once per day, assuming zetaback is run hourly.  Full backups
+will be done once per week.  Time format and retention are default.
+
+  default {
+    store = /var/spool/zfs_backups/%h
+    agent = /usr/local/bin/zetaback_agent
+    backup_interval = 83000
+    full_interval = 604800
+  }
+
+  host1 {}
+
+  host2 {}
+
+=head2 Non-uniform hosts
+
+Here, host1's and host2's agents are found in different places, and host2's
+backups should be stored in a different path.
+
+  default {
+    store = /var/spool/zfs_backups/%h
+    agent = /usr/local/bin/zetaback_agent
+    backup_interval = 83000
+    full_interval = 604800
+  }
+
+  host1 {
+    agent = /opt/local/bin/zetaback_agent
+  }
+
+  host2 {
+    store = /var/spool/alt_backups/%h
+    agent = /www/bin/zetaback_agent
+  }
+
+=cut
+
 sub parse_config() {
   local($/);
   $/ = undef;
@@ -708,6 +808,6 @@ specified on the command line with the -c flag.
 
 =head1 SEE ALSO
 
-zetaback.conf(5), zetaback_agent(1), zetback_agent.conf(5)
+zetaback_agent(1)
 
 =cut
