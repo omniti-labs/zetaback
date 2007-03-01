@@ -9,6 +9,22 @@ use vars qw/%conf $version_string
 $version_string = '0.1';
 $CONF = q^/etc/zetaback_agent.conf^;
 
+=pod
+
+=head1 NAME
+
+zetaback_agent - client-side component of zetaback.
+
+=head1 SYNOPSIS
+
+  zetaback_agent -v
+
+  zetaback_agent [-l | -s] [-c conf] [-d] [-h host] [-z zfs]
+
+  zetaback -b [-c conf] [-d] [-z zfs]
+
+=cut
+
 GetOptions(
   "c=s" => \$CONF,
   "l"   => \$LIST,
