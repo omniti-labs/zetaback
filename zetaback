@@ -75,7 +75,7 @@ if($actions != 1) {
 
 =head1 DESCRIPTION
 
-The B<zetaback> program is orchiestrates the backup (either full or
+The B<zetaback> program is orchestrates the backup (either full or
 incremental) of remote ZFS filesysetms to a local store.  It handles
 frequency requirements for both full and incemental backups as well
 as retention policies.  In addition to backups, the B<zetaback> tool
@@ -106,29 +106,29 @@ Enable debugging output.
 =item -n
 
 Don't actually perform any remote commands or expunging.  This is useful with
-the -d options to ascertain what would be done if the command was executed
-without the -n option.
+the -d options to ascertain what would be done if the command was actually
+executed.
 
 =item -t <timestamp>
 
-Used during the restore process to Specify a point in time selection of a
-backup image.  If omitted, the command becomes interactive.  This timestamp
-is a UNIX timestamp abd is shown in output of -s and -sx actions.
+Used during the restore process to specify a backup image from the desired 
+point in time.  If omitted, the command becomes interactive.  This timestamp
+is a UNIX timestamp and is shown in output of -s and -sx actions.
 
 =item -rhost <host>
 
-Specifiy the remote host that is the target for a restore operation.  If
+Specify the remote host that is the target for a restore operation.  If
 omitted the command becomes interactive.
 
 =item -rzfs <zfs>
 
-Specifiy the remote ZFS filesystem that is the target for a restore
+Specify the remote ZFS filesystem that is the target for a restore
 operation.  If omitted the command becomes interactive.
 
 =item -h <host>
 
-Filters the operation to the host specified.  If <host> is the of the form
-/patterm/, it matches 'pattern' as a perl regular expression against available
+Filters the operation to the host specified.  If <host> is of the form
+/pattern/, it matches 'pattern' as a perl regular expression against available
 hosts.  If this option is omitted, no limit is enforced and all hosts are
 used for the action.
 
@@ -162,9 +162,10 @@ size on disk.
 =item -sx
 
 Shows a extended summary.  In addition to the output provided by the -s
-action, the -sx action will show detail of each availble backup and note
-the more recent full backup and incremental bakcup if such an incremental
-backup exists more recent than the full backup.
+action, the -sx action will show detail for each availble backup.  For
+full backups, the detail will include any more recent full backups, if
+they exist.  For incremental backups, the detail will include any
+incremental backups that are more recent than the last full backup. 
 
 =item -b
 
@@ -182,7 +183,7 @@ configuration.
 =item -r
 
 Perform a restore.  This option will operate on the specified backup and
-restore it to the a zfs filesystem specified with -rzfs on the host specified
+restore it to the zfs filesystem specified with -rzfs on the host specified
 with the -rhost option.  The -h, -z and -t options may be used to filter
 the source backup list.  If the filtered list contains more than one
 source backup image, the command will act interactively.  If the -rhost
