@@ -389,15 +389,19 @@ sub zfs_do_backup($$$$$$) {
   # Do it. yeah.
   open(LBACKUP, ">$store/.$dumpfile") || die "zfs_full_backup: cannot create dump\n";
   eval {
-    open(RBACKUP, "ssh $host $agent -z $fs -$type $point |") || die "zfs_full_backup: cannot perform send\n";
-    my $buffer;
-    while(my $len = sysread(RBACKUP, $buffer, $BLOCKSIZE)) {
-      if(syswrite(LBACKUP, $buffer, $len) != $len) {
-        die "$!";
-      }
+    if(my $pid = fork()) {
+      close(LBACKUP);
+      waitpid($pid, 0);
+      die "error: $?" if($?);
     }
-    close(LBACKUP);
-    close(RBACKUP);
+    else {
+      my @cmd = ('ssh', $host, $agent, '-z', $fs, "-$type", $point);
+      open STDIN, "/dev/null" || exit(-1);
+      open STDOUT, ">&LBACKUP" || exit(-1);
+      exec { $cmd[0] } @cmd;
+      print STDERR "$cmd[0] failed: $?\n";
+      exit($?);
+    }
     die "dump failed (zero bytes)\n" if(-z "$store/.$dumpfile");
     rename("$store/.$dumpfile", "$store/$dumpfile") || die "cannot rename dump\n";
   };
