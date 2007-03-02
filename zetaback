@@ -298,19 +298,32 @@ backups should be stored in a different path.
 
 =cut
 
+# Make the parser more formal:
+# config => stanza*
+# stanza => string { kvp* }
+# kvp    => string = string
+my $str_re = qr/(?:"(?:\\\\|\\"|[^"])*"|\S+)/;
+my $kvp_re = qr/($str_re)\s*=\s*($str_re)/;
+my $stanza_re = qr/($str_re)\s*\{((?:\s*$kvp_re)*)\s*\}/;
+
 sub parse_config() {
   local($/);
   $/ = undef;
   open(CONF, "<$CONF");
   my $file = <CONF>;
-  while($file =~ m/^\s*(\S+)\s\s*{(.*?)}/gms) {
+  # Rip comments
+  $file =~ s/^\s*#.*$//mg;
+  while($file =~ m/$stanza_re/gm) {
     my $scope = $1;
     my $filepart = $2;
+    $scope =~ s/^"(.*)"$/$1/;
     $conf{$scope} ||= {};
-    foreach my $line (split /\n/, $filepart) {
-      if($line =~ /^\s*([^#]\S*)\s*=\s*(\S+)/) {
-        $conf{$scope}->{lc($1)} = $2;
-      }
+    while($filepart =~ m/$kvp_re/gm) {
+      my $key = $1;
+      my $value = $2;
+      $key =~ s/^"(.*)"$/$1/;
+      $value =~ s/^"(.*)"$/$1/;
+      $conf{$scope}->{lc($key)} = $value;
     }
   }
   close(CONF);
