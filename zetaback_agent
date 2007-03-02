@@ -19,9 +19,15 @@ zetaback_agent - client-side component of zetaback.
 
   zetaback_agent -v
 
-  zetaback_agent [-l | -s] [-c conf] [-d] [-h host] [-z zfs]
+  zetaback_agent -l [-c conf]
 
-  zetaback -b [-c conf] [-d] [-z zfs]
+  zetaback_agent -r [-c conf] [-z zfs]
+
+  zetaback -f <timestamp> [-c conf] [-z zfs]
+
+  zetaback -i <timestamp> [-c conf] [-z zfs]
+
+  zetaback -d <snap>  [-c conf] [-z zfs]
 
 =cut
 
