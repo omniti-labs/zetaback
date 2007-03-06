@@ -27,7 +27,7 @@ zetaback_agent - client-side component of zetaback.
 
   zetaback -i <timestamp> [-c conf] [-z zfs]
 
-  zetaback -d <snap>  [-c conf] [-z zfs]
+  zetaback -d <snap> -z <zfs> [-c conf]
 
 =cut
 
@@ -42,12 +42,102 @@ GetOptions(
   "v"   => \$VERSION,
 );
 
+=pod
+
+=head1 DESCRIPTION
+
+B<zetaback_agent> handles requests from zetaback and performs the requested
+operations on a host.  Normally B<zetaback_agent> is only called by
+zetaback and should never need to be invoked directly.
+
+=head1 OPTIONS
+
+The following options are available:
+
+=over
+
+=item -c <conf>
+
+Use the specified file as the configuration file.  The default file, if
+none is specified is /etc/zetaback_agent.conf.
+
+=item -d <snap>
+
+Delete the specified snapshot.  Requires the use of -z to specify the
+ZFS filesystem.
+
+=item -f <timestamp>
+
+Perform a full backup.  The name of the backup will include <timestamp>,
+which is provided by the backup server.
+
+=item -i <timestamp>
+
+Perform an incremental backup.  The name of the backup will include 
+<timestamp>, which is provided by the backup server.
+
+=item -l
+
+List ZFS filesystems.
+
+=item -r
+
+Perform a restore.
+
+=item -v
+
+Print the version number and exit.
+
+=item -z
+
+Specify a ZFS filesystem to backup, restore, or delete.
+
+=cut
+
 if($VERSION) {
   print "zetaback_agent: $version_string\n";
   exit 0;
 }
 
-# Read out config in
+=pod
+
+=head1 CONFIGURATION
+
+The zetaback_agent configuration file contains a pattern list of ZFS 
+filesystems to be backed up.  The pattern list is a Perl-compatible 
+regular expression (PCRE).  Only one 'pattern=' line is permitted.
+
+=head1 CONFIGURATION EXAMPLES
+
+=head2 All ZFS filesystems
+
+This pattern matches all ZFS filesystems.
+
+  pattern=.
+
+=head2 Substring match
+
+This will match anywhere in the name of the ZFS filesystem.  This is
+helpful for catching all ZFS filesystems in a particular zpool, while
+excluding any others.
+
+  pattern=zones
+
+=head2 Left-anchored names
+
+This pattern matches all ZFS filesystems whose names begin with 'www'.
+
+  pattern=^www
+
+=head2 Specific ZFS filesystems
+
+This pattern matches specific ZFS filesystems.
+
+  pattern=(?:data|mirrors|www)
+
+=cut
+
+# Read our config in
 open(CONF, "<$CONF");
 while(<CONF>) { /^\s*([^#](?:\S*)?)\s*=\s*(\S+)/ && ($conf{lc($1)} = $2); }
 close(CONF);
@@ -126,3 +216,22 @@ if($ZFS && $SNAP) { zfs_agent_remove_snap(); exit; }
 if($ZFS && $FULL) { zfs_agent_perform_full(); exit; }
 if($ZFS && $BASE) { zfs_agent_perform_incremental(); exit; }
 if($ZFS && $RESTORE) { zfs_agent_perform_restore(); exit; }
+
+=pod
+
+=head1 FILES
+
+=over
+
+=item /etc/zetaback_agent.conf
+
+The zetaback_agent configuration file.  The location of the file can be
+specified on the command line with the -c flag.
+
+=back
+
+=head1 SEE ALSO
+
+zetaback(1)
+
+=cut
