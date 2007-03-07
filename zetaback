@@ -4,9 +4,10 @@ use strict;
 use Getopt::Long;
 use MIME::Base64;
 use POSIX qw/strftime/;
+use Fcntl qw/:flock/;
 use Pod::Usage;
 
-use vars qw/%conf $version_string
+use vars qw/%conf %locks $version_string
             $CONF $BLOCKSIZE $DEBUG $HOST $BACKUP
             $RESTORE $RESTORE_HOST $RESTORE_ZFS $TIMESTAMP
             $LIST $SUMMARY $SUMMARY_EXT
@@ -355,6 +356,34 @@ sub pretty_size($) {
     return sprintf("%0.2f Kb", $bytes / (1024));
   }
   return "$bytes b";
+}
+sub lock($;$$) {
+  my ($host, $file, $nowait) = @_;
+  print "Acquiring lock for $host:$file\n" if($DEBUG);
+  $file ||= 'master.lock';
+  my $store = config_get($host, 'store');
+  $store =~ s/%h/$host/g;
+  return 1 if(exists($locks{"$host:$file"}));
+  open(LOCK, "+>>$store/$file") || return 0;
+  unless(flock(LOCK, LOCK_EX | ($nowait ? LOCK_NB : 0))) {
+    close(LOCK);
+    return 0;
+  }
+  $locks{"$host:$file"} = \*LOCK;
+  return 1;
+}
+sub unlock($;$$) {
+  my ($host, $file, $remove) = @_;
+  print "Releasing lock for $host:$file\n" if($DEBUG);
+  $file ||= 'master.lock';
+  my $store = config_get($host, 'store');
+  $store =~ s/%h/$host/g;
+  return 0 unless(exists($locks{"$host:$file"}));
+  *UNLOCK = $locks{$file};
+  unlink("$store/$file") if($remove);
+  flock(UNLOCK, LOCK_UN);
+  close(UNLOCK);
+  return 1;
 }
 sub scan_for_backups($) {
   my %info = ();
@@ -718,70 +747,90 @@ sub plan_and_run($$$) {
   my ($host, $store, $diskpat) = @_;
   print "Planning '$host'\n" if($DEBUG);
   my $agent = config_get($host, 'agent');
-  open(ZFSLIST, "ssh $host $agent -l |") || next;
-  foreach my $diskline (<ZFSLIST>) {
-    chomp($diskline);
-    next unless($diskline =~ /^(\S+) \[([^\]]*)\]/);
-    my $diskname = $1;
-    my %snaps;
-    map { $snaps{$_} = 1 } (split(/,/, $2));
+  my $took_action = 1;
+  while($took_action) {
+    $took_action = 0;
+    my @disklist;
 
-    # If we are being selective (via -z) now is the time.
-    next
-      if($diskpat &&          # if the pattern was specified it could
-         !($diskname eq $diskpat ||        # be a specific match or a
-           ($diskpat =~ /^\/(.+)\/$/ && $diskname =~ /$1/))); # regex
+    # We need a lock for the listing.
+    return unless(lock($host, ".list"));
+    open(ZFSLIST, "ssh $host $agent -l |") || next;
+    @disklist = grep { chomp } (<ZFSLIST>);
+    close(ZFSLIST);
 
-    print " => Scanning '$store' for old backups of '$diskname'.\n" if($DEBUG);
-    # Make directory on demand
-    my $backup_info = scan_for_backups($store);
-    # That gave us info on all backups, we just want this disk
-    $backup_info = $backup_info->{$diskname} || {};
+    foreach my $diskline (@disklist) {
+      chomp($diskline);
+      next unless($diskline =~ /^(\S+) \[([^\]]*)\]/);
+      my $diskname = $1;
+      my %snaps;
+      map { $snaps{$_} = 1 } (split(/,/, $2));
+  
+      # If we are being selective (via -z) now is the time.
+      next
+        if($diskpat &&          # if the pattern was specified it could
+           !($diskname eq $diskpat ||        # be a specific match or a
+             ($diskpat =~ /^\/(.+)\/$/ && $diskname =~ /$1/))); # regex
+  
+      print " => Scanning '$store' for old backups of '$diskname'.\n" if($DEBUG);
 
-    # Should we do a backup?
-    my $backup_type = 'no';
-    if(time() > $backup_info->{last_backup} + config_get($host, 'backup_interval')) {
-      $backup_type = 'incremental';
-    }
-    if(time() > $backup_info->{last_full} + config_get($host, 'full_interval')) {
-      $backup_type = 'full';
-    }
-
-    # If we want an incremental, but have no full, then we need to upgrade to full
-    if($backup_type eq 'incremental') {
-      my $have_full_locally = 0;
-      # For each local full backup, see if the full backup still exists on the other end.
-      foreach (keys %{$backup_info->{'full'}}) {
-        $have_full_locally = 1 if(exists($snaps{'__zb_full_' . $_}));
+      # Make directory on demand
+      my $backup_info = scan_for_backups($store);
+      # That gave us info on all backups, we just want this disk
+      $backup_info = $backup_info->{$diskname} || {};
+  
+      # Should we do a backup?
+      my $backup_type = 'no';
+      if(time() > $backup_info->{last_backup} + config_get($host, 'backup_interval')) {
+        $backup_type = 'incremental';
       }
-      $backup_type = 'full' unless($have_full_locally);
-    }
-
-    print " => doing $backup_type backup\n" if($DEBUG);
-    # We need to drop a __zb_base snap or a __zb_incr snap before we proceed
-    unless($NUETERED) {
-      if($backup_type eq 'full') {
-        eval { zfs_full_backup($host, $diskname, $store); };
-        if ($@) {
-          chomp(my $err = $@);
-          print " => failure $err\n";
-        }
-        else {
-          # Unless there was an error backing up, remove all the other full snaps
-          foreach (keys %snaps) {
-            zfs_remove_snap($host, $diskname, $_) if(/^__zb_full_(\d+)/) 
-          }
-        }
+      if(time() > $backup_info->{last_full} + config_get($host, 'full_interval')) {
+        $backup_type = 'full';
       }
+  
+      # If we want an incremental, but have no full, then we need to upgrade to full
       if($backup_type eq 'incremental') {
-        zfs_remove_snap($host, $diskname, '__zb_incr') if($snaps{'__zb_incr'});
-        # Find the newest full from which to do an incremental (NOTE: reverse numeric sort)
-        my @fulls = sort { $b <=> $a } (keys %{$backup_info->{'full'}});
-        zfs_incremental_backup($host, $diskname, $fulls[0], $store);
+        my $have_full_locally = 0;
+        # For each local full backup, see if the full backup still exists on the other end.
+        foreach (keys %{$backup_info->{'full'}}) {
+          $have_full_locally = 1 if(exists($snaps{'__zb_full_' . $_}));
+        }
+        $backup_type = 'full' unless($have_full_locally);
       }
+  
+      print " => doing $backup_type backup\n" if($DEBUG);
+      # We need to drop a __zb_base snap or a __zb_incr snap before we proceed
+      unless($NUETERED || $backup_type eq 'no') {
+        # attempt to lock this action, if it fails, skip -- someone else is working it.
+        next unless(lock($host, dir_encode($diskname), 1));
+        unlock($host, '.list');
+
+        if($backup_type eq 'full') {
+          eval { zfs_full_backup($host, $diskname, $store); };
+          if ($@) {
+            chomp(my $err = $@);
+            print " => failure $err\n";
+          }
+          else {
+            # Unless there was an error backing up, remove all the other full snaps
+            foreach (keys %snaps) {
+              zfs_remove_snap($host, $diskname, $_) if(/^__zb_full_(\d+)/) 
+            }
+          }
+          $took_action = 1;
+        }
+        if($backup_type eq 'incremental') {
+          zfs_remove_snap($host, $diskname, '__zb_incr') if($snaps{'__zb_incr'});
+          # Find the newest full from which to do an incremental (NOTE: reverse numeric sort)
+          my @fulls = sort { $b <=> $a } (keys %{$backup_info->{'full'}});
+          zfs_incremental_backup($host, $diskname, $fulls[0], $store);
+          $took_action = 1;
+        }
+        unlock($host, dir_encode($diskname), 1);
+      }
+      last if($took_action);
     }
+    unlock($host, '.list');
   }
-  close(ZFSLIST);
 }
 
 if($RESTORE) {
