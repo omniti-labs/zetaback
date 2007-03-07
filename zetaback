@@ -638,22 +638,26 @@ sub perform_restore() {
   print "\n";
 
   foreach(@backup_list) {
-    $_->{success} = zfs_restore_part($RESTORE_HOST, $RESTORE_ZFS, $_->{file});
+    $_->{success} = zfs_restore_part($RESTORE_HOST, $RESTORE_ZFS, $_->{file}, $_->{depends});
   }
 }
 
-sub zfs_restore_part($$$) {
-  my ($host, $fs, $file) = @_;
+sub zfs_restore_part($$$;$) {
+  my ($host, $fs, $file, $dep) = @_;
   my $command;
   if(exists($conf{$host})) {
     my $agent = config_get($host, 'agent');
     $command = "$agent -r -z $fs";
+    $command .= " -b $dep" if($dep);
   }
   else {
     $command = "/usr/sbin/zfs recv $fs";
   }
   print " => piping $file to $command\n" if($DEBUG);
-  unless($NUETERED) {
+  if($NUETERED) {
+    print "gzip -dfc $file | ssh $host $command\n" if ($DEBUG);
+  }
+  else {
     open(DUMP, "gzip -dfc $file |");
     eval {
       open(RECEIVER, "| ssh $host $command");

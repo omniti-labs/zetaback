@@ -5,7 +5,8 @@ use Getopt::Long;
 use Data::Dumper;
 
 use vars qw/%conf $version_string
-            $CONF $LIST $FULL $SNAP $ZFS $BASE $RESTORE $VERSION/;
+            $CONF $LIST $FULL $SNAP $ZFS $BASE $RESTORE $VERSION
+            $BUG_6343779/;
 $version_string = '0.1';
 $CONF = q^/etc/zetaback_agent.conf^;
 
@@ -21,7 +22,7 @@ zetaback_agent - client-side component of zetaback.
 
   zetaback_agent -l [-c conf]
 
-  zetaback_agent -r [-c conf] [-z zfs]
+  zetaback_agent -r [-b <timestamp>] [-c conf] [-z zfs]
 
   zetaback -f <timestamp> [-c conf] [-z zfs]
 
@@ -39,6 +40,7 @@ GetOptions(
   "d=s" => \$SNAP,
   "f=s" => \$FULL,
   "i=s" => \$BASE,
+  "b=s" => \$BUG_6343779,
   "v"   => \$VERSION,
 );
 
@@ -83,6 +85,13 @@ List ZFS filesystems.
 =item -r
 
 Perform a restore.
+
+=item -b
+
+When performing a restore, if -b is specified, it informs the agent that
+the recieve command is an incremental based of the full snapshot with the
+timestamp specified.  The agent will unmount and rollback the filesystem
+prior to applyying the incremental in order to work around bug 6343779.
 
 =item -v
 
@@ -202,20 +211,25 @@ sub zfs_agent_list {
 }
 
 sub zfs_agent_perform_restore {
-  my $fs = $ZFS;
   unless($ZFS && $RESTORE) {
     die "zfs_agent_perform_restore: bad state\n";
   }
-  my @cmd = ("/usr/sbin/zfs", "recv", $fs);
+  if($BUG_6343779) {
+    # Optionally work around Solaris bug: 6343779
+    my $base = $ZFS . '@__zb_full_' . $BUG_6343779;
+    `/usr/sbin/zfs unmount $ZFS`;
+    `/usr/sbin/zfs rollback $base`;
+  }
+  my @cmd = ("/usr/sbin/zfs", "recv", $ZFS);
   exec { $cmd[0] } @cmd;
   exit;
 }
 
 if($LIST) { zfs_agent_list(); exit; }
 if($ZFS && $SNAP) { zfs_agent_remove_snap(); exit; }
+if($ZFS && $RESTORE) { zfs_agent_perform_restore(); exit; }
 if($ZFS && $FULL) { zfs_agent_perform_full(); exit; }
 if($ZFS && $BASE) { zfs_agent_perform_incremental(); exit; }
-if($ZFS && $RESTORE) { zfs_agent_perform_restore(); exit; }
 
 =pod
 
