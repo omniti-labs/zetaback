@@ -544,7 +544,7 @@ sub choose($$;$) {
     print "$name: ";
     chomp($selection = <>);
   }
-  return $hash->{$list[$selection - 1]};
+  return $list[$selection - 1];
 }
 
 sub backup_chain($$) {
