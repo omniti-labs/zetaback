@@ -89,9 +89,9 @@ Perform a restore.
 =item -b
 
 When performing a restore, if -b is specified, it informs the agent that
-the recieve command is an incremental based of the full snapshot with the
+the receive command is an incremental based of the full snapshot with the
 timestamp specified.  The agent will unmount and rollback the filesystem
-prior to applyying the incremental in order to work around bug 6343779.
+prior to applying the incremental in order to work around bug 6343779.
 
 =item -v
 
