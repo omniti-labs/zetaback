@@ -1,0 +1,17 @@
+Prerequisites
+=============
+ * A backup host with sufficient disk space.
+ * SSH in place where a user on the backup server can perform a password-less
+   remote login to the clients (using ssh keys) and execute the agent script 
+   as root.
+ * Perl 5 on client and server.
+ * ZFS tools installed.
+
+Installation
+============
+Edit Makefile to taste for install prefix (defaults to /usr/local).
+If you want to use a particular Perl binary instead of the typical
+/usr/bin/perl, you can set that too.  
+
+If you just want to use the defaults, a 'make && make install' will configure 
+and install everything.
