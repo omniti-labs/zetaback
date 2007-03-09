@@ -9,13 +9,14 @@ use IO::File;
 use Pod::Usage;
 
 use vars qw/%conf %locks $version_string
-            $CONF $BLOCKSIZE $DEBUG $HOST $BACKUP
+            $PREFIX $CONF $BLOCKSIZE $DEBUG $HOST $BACKUP
             $RESTORE $RESTORE_HOST $RESTORE_ZFS $TIMESTAMP
             $LIST $SUMMARY $SUMMARY_EXT
             $EXPUNGE $NEUTERED $ZFS
             $VERSION $HELP/;
 $version_string = '0.1';
-$CONF = q^/etc/zetaback.conf^;
+$PREFIX = q^__PREFIX__^;
+$CONF = qq^$PREFIX/etc/zetaback.conf^;
 $BLOCKSIZE = 1024*64;
 
 $conf{'default'}->{'time_format'} = "%Y-%m-%d %H:%M:%S";
@@ -99,7 +100,8 @@ The following options have the same meaning over several actions:
 =item -c <conf>
 
 Use the specified file as the configuration file.  The default file, if
-none is specified is /etc/zetaback.conf.
+none is specified is /etc/zetaback.conf.  The prefix for this file may
+also be specified in the Makefile.
 
 =item -d
 
@@ -893,7 +895,8 @@ exit 0;
 =item /etc/zetaback.conf
 
 The main zetaback configuration file.  The location of the file can be
-specified on the command line with the -c flag. 
+specified on the command line with the -c flag.  The prefix of this 
+file may also be specified in the Makefile.
 
 =back
 

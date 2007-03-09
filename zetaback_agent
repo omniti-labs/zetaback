@@ -5,10 +5,11 @@ use Getopt::Long;
 use Data::Dumper;
 
 use vars qw/%conf $version_string
-            $CONF $LIST $FULL $SNAP $ZFS $BASE $RESTORE $VERSION
+            $PREFIX $CONF $LIST $FULL $SNAP $ZFS $BASE $RESTORE $VERSION
             $BUG_6343779/;
 $version_string = '0.1';
-$CONF = q^/etc/zetaback_agent.conf^;
+$PREFIX = q^__PREFIX__^;
+$CONF = qq^$PREFIX/etc/zetaback_agent.conf^;
 
 =pod
 
@@ -61,7 +62,8 @@ The following options are available:
 =item -c <conf>
 
 Use the specified file as the configuration file.  The default file, if
-none is specified is /etc/zetaback_agent.conf.
+none is specified is /etc/zetaback_agent.conf.  The prefix of this file
+may also be specified in the Makefile.
 
 =item -d <snap>
 
