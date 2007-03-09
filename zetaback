@@ -11,7 +11,7 @@ use vars qw/%conf %locks $version_string
             $CONF $BLOCKSIZE $DEBUG $HOST $BACKUP
             $RESTORE $RESTORE_HOST $RESTORE_ZFS $TIMESTAMP
             $LIST $SUMMARY $SUMMARY_EXT
-            $EXPUNGE $NUETERED $ZFS
+            $EXPUNGE $NEUTERED $ZFS
             $VERSION $HELP/;
 $version_string = '0.1';
 $CONF = q^/etc/zetaback.conf^;
@@ -54,7 +54,7 @@ GetOptions(
   "rhost=s" => \$RESTORE_HOST,
   "rzfs=s"  => \$RESTORE_ZFS,
   "d"       => \$DEBUG,
-  "n"       => \$NUETERED,
+  "n"       => \$NEUTERED,
   "x"       => \$EXPUNGE,
   "v"       => \$VERSION,
 );
@@ -535,7 +535,7 @@ sub perform_retention($$) {
         print "ERROR: We tried to expunge $host $disk [$_], but couldn't find it.\n";
       }
       print "    => expunging $filename\n" if($DEBUG);
-      unless($NUETERED) {
+      unless($NEUTERED) {
         unlink($filename) || print "ERROR: unlink $filename: $?\n";
       }
     }
@@ -683,7 +683,7 @@ sub zfs_restore_part($$$;$) {
     $command = "/usr/sbin/zfs recv $fs";
   }
   print " => piping $file to $command\n" if($DEBUG);
-  if($NUETERED) {
+  if($NEUTERED) {
     print "gzip -dfc $file | ssh $host $command\n" if ($DEBUG);
   }
   else {
@@ -799,7 +799,7 @@ sub plan_and_run($$$) {
   
       print " => doing $backup_type backup\n" if($DEBUG);
       # We need to drop a __zb_base snap or a __zb_incr snap before we proceed
-      unless($NUETERED || $backup_type eq 'no') {
+      unless($NEUTERED || $backup_type eq 'no') {
         # attempt to lock this action, if it fails, skip -- someone else is working it.
         next unless(lock($host, dir_encode($diskname), 1));
         unlock($host, '.list');
