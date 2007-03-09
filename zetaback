@@ -5,6 +5,7 @@ use Getopt::Long;
 use MIME::Base64;
 use POSIX qw/strftime/;
 use Fcntl qw/:flock/;
+use IO::File;
 use Pod::Usage;
 
 use vars qw/%conf %locks $version_string
@@ -415,6 +416,19 @@ sub scan_for_backups($) {
 
 parse_config();
 
+sub zetaback_log($$;@) {
+  my ($host, $mess, @args) = @_;
+  my $tf = config_get($host, 'time_format');
+  my $file = config_get($host, 'logfile');
+  my $fileh;
+  if(defined($file)) {
+    $fileh = IO::File->new(">>$file");
+  }
+  $fileh ||= IO::File->new(">&STDERR");
+  printf $fileh "%s: $mess", strftime($tf, localtime(time)), @args;
+  $fileh->close();
+}
+
 sub zfs_remove_snap($$$) {
   my ($host, $fs, $snap) = @_;
   my $agent = config_get($host, 'agent');
@@ -449,8 +463,14 @@ sub zfs_do_backup($$$$$$) {
   };
   if($@) {
     unlink("$store/.$dumpfile");
+    chomp(my $error = $@);
+    $error =~ s/[\r\n]+/ /gsm;
+    zetaback_log($host, "FAILED[$error] $host:$fs $type\n");
     die "zfs_full_backup: failed $@";
   }
+  my @st = stat("$store/$dumpfile");
+  my $size = pretty_size($st[7]);
+  zetaback_log($host, "SUCCESS[$size] $host:$fs $type\n");
 }
 
 sub zfs_full_backup($$$) {
