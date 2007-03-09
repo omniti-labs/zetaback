@@ -16,14 +16,14 @@ all:
 	if [ ! -f zetaback ]; then mv -f zetaback.new zetaback; \
 	elif cmp -s zetaback.new zetaback; then true; \
 	else mv -f zetaback.new zetaback; \
-  fi
+	fi
 	rm -f zetaback.new
 	sed -e "s#/usr/bin/perl#$(perl)#;" -e "s#__PREFIX__#$(prefix)#;" \
 	< zetaback_agent > zetaback_agent.new
 	if [ ! -f zetaback_agent ]; then mv -f zetaback_agent.new zetaback_agent; \
 	elif cmp -s zetaback_agent.new zetaback_agent; then true; \
 	else mv -f zetaback_agent.new zetaback_agent; \
-  fi
+	fi
 	rm -f zetaback_agent.new
 
 install: all
