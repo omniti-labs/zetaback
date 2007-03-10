@@ -12,19 +12,9 @@ pod2man = pod2man
 
 all:
 	sed -e "s#/usr/bin/perl#$(perl)#;" -e "s#__PREFIX__#$(prefix)#;" \
-	< zetaback > zetaback.new
-	if [ ! -f zetaback ]; then mv -f zetaback.new zetaback; \
-	elif cmp -s zetaback.new zetaback; then true; \
-	else mv -f zetaback.new zetaback; \
-	fi
-	rm -f zetaback.new
+	< zetaback.in > zetaback
 	sed -e "s#/usr/bin/perl#$(perl)#;" -e "s#__PREFIX__#$(prefix)#;" \
-	< zetaback_agent > zetaback_agent.new
-	if [ ! -f zetaback_agent ]; then mv -f zetaback_agent.new zetaback_agent; \
-	elif cmp -s zetaback_agent.new zetaback_agent; then true; \
-	else mv -f zetaback_agent.new zetaback_agent; \
-	fi
-	rm -f zetaback_agent.new
+	< zetaback_agent.in > zetaback_agent
 
 install: all
 	$(mkinstalldirs) ${bindir}
@@ -41,14 +31,4 @@ install: all
 	$(install) -m 0644 zetaback_agent.1 ${mandir}/man1/zetaback_agent.1
 
 clean:
-	rm -f zetaback.1 zetaback_agent.1
-	@echo "Resetting perl and prefix paths to defaults"
-	@echo "#!/usr/bin/perl" > zetaback.clean
-	@grep -v '^#!' zetaback | \
-	sed -e 's#$PREFIX = q^.*^;#$PREFIX = q^__PREFIX__^;#;' >> zetaback.clean
-	@mv zetaback.clean zetaback
-	@echo "#!/usr/bin/perl" > zetaback_agent.clean
-	@grep -v '^#!' zetaback_agent | \
-	sed -e 's#$PREFIX = q^.*^;#$PREFIX = q^__PREFIX__^;#;' >> zetaback_agent.clean
-	@mv zetaback_agent.clean zetaback_agent
-
+	rm -f zetaback zetaback_agent zetaback.1 zetaback_agent.1
