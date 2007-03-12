@@ -32,3 +32,6 @@ install: all
 
 clean:
 	rm -f zetaback zetaback_agent zetaback.1 zetaback_agent.1
+
+distclean: clean
+	rm -f Makefile

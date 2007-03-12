@@ -9,9 +9,10 @@ Prerequisites
 
 Installation
 ============
-Edit Makefile to taste for install prefix (defaults to /usr/local).
-If you want to use a particular Perl binary instead of the typical
-/usr/bin/perl, you can set that too.  
+cp Makefile.in Makefile
+make
+make install
 
-If you just want to use the defaults, a 'make && make install' will configure 
-and install everything.
+By default, the install prefix is /usr/local, and perl is expected to be
+/usr/bin/perl.  Edit Makefile to change.  You should also make sure that you 
+have the 'pod2man' utility in your path.
