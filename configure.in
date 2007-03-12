@@ -1,0 +1,8 @@
+AC_INIT(zetaback.in)
+AC_PATH_PROG(PERL,perl)
+AC_PATH_PROG(POD2MAN,pod2man)
+AC_SUBST(PERL)
+AC_SUBST(POD2MAN)
+AC_OUTPUT([
+Makefile
+])
