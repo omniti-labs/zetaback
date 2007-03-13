@@ -1,5 +1,9 @@
 #!/usr/bin/perl
 
+# Copyright (c) 2007 OmniTI Computer Consulting, Inc. All rights reserved.
+# For information on licensing see:
+#   https://labs.omniti.com/zetaback/trunk/LICENSE
+
 use strict;
 use Getopt::Long;
 use MIME::Base64;
