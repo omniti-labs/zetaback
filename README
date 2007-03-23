@@ -9,6 +9,8 @@ Prerequisites
 
 Installation
 ============
-autoconf
+To get the defaults (installs into /usr/local):
+
+./configure
 make
 make install

@@ -15,7 +15,6 @@ DESTDIR=
 mkinstalldirs=./mkinstalldirs
 install=./install-sh -c
 
-# Set these to appropriate values for your system
 perl=@PERL@
 pod2man=@POD2MAN@
 
