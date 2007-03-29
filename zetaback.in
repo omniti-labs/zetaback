@@ -15,7 +15,7 @@ use Pod::Usage;
 use vars qw/%conf %locks $version_string
             $PREFIX $CONF $BLOCKSIZE $DEBUG $HOST $BACKUP
             $RESTORE $RESTORE_HOST $RESTORE_ZFS $TIMESTAMP
-            $LIST $SUMMARY $SUMMARY_EXT
+            $LIST $SUMMARY $SUMMARY_EXT $FORCE_FULL
             $EXPUNGE $NEUTERED $ZFS
             $VERSION $HELP/;
 $version_string = '0.1';
@@ -38,7 +38,7 @@ zetaback - perform backup, restore and retention policies for ZFS backups.
 
   zetaback [-l | -s | -sx] [-c conf] [-d] [-h host] [-z zfs]
 
-  zetaback -b [-x] [-c conf] [-d] [-n] [-h host] [-z zfs]
+  zetaback -b [-f] [-x] [-c conf] [-d] [-n] [-h host] [-z zfs]
 
   zetaback -x [-b] [-c conf] [-d] [-n] [-h host] [-z zfs]
 
@@ -63,6 +63,7 @@ GetOptions(
   "n"       => \$NEUTERED,
   "x"       => \$EXPUNGE,
   "v"       => \$VERSION,
+  "f"       => \$FORCE_FULL,
 );
 
 # actions allowed together 'x' and 'b' all others are exclusive:
@@ -181,6 +182,14 @@ Performs a backup.  This option will investigate all eligible hosts, query
 the available filesystems from the remote agent and determine if any such
 filesystems require a new full or incremental backup to be taken.  This
 option may be combined with the -x option (to clean up afterwards).
+
+=item -f
+
+Forces a full backup to be taken on each disk encountered.  This is used
+in combination with -b.  It is recommended to use this option only when
+targeting specific disks (via the -h and -z options).  Forcing a full
+backup across all machines will cause staggered backups to coalesce and
+could cause performance issues.
 
 =item -x
 
@@ -771,6 +780,7 @@ sub show_backups($$$) {
 
 sub plan_and_run($$$) {
   my ($host, $store, $diskpat) = @_;
+  my %suppress;
   print "Planning '$host'\n" if($DEBUG);
   my $agent = config_get($host, 'agent');
   my $took_action = 1;
@@ -790,7 +800,9 @@ sub plan_and_run($$$) {
       my $diskname = $1;
       my %snaps;
       map { $snaps{$_} = 1 } (split(/,/, $2));
-  
+ 
+      # We've just done this.
+      next if($suppress{"$host:$diskname"}); 
       # If we are being selective (via -z) now is the time.
       next
         if($diskpat &&          # if the pattern was specified it could
@@ -822,7 +834,8 @@ sub plan_and_run($$$) {
         }
         $backup_type = 'full' unless($have_full_locally);
       }
-  
+      $backup_type = 'full' if($FORCE_FULL);
+
       print " => doing $backup_type backup\n" if($DEBUG);
       # We need to drop a __zb_base snap or a __zb_incr snap before we proceed
       unless($NEUTERED || $backup_type eq 'no') {
@@ -853,6 +866,7 @@ sub plan_and_run($$$) {
         }
         unlock($host, dir_encode($diskname), 1);
       }
+      $suppress{"$host:$diskname"} = 1;
       last if($took_action);
     }
     unlock($host, '.list');
