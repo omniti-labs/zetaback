@@ -199,7 +199,8 @@ sub zfs_agent_list {
   while(<ZFSLIST>) {
     chomp;
     my @line = split /\t/;
-    if($line[0] =~ /$conf{pattern}/) {
+    (my $fs = $line[0]) =~ s/\@.+//;
+    if($fs =~ /$conf{pattern}/) {
       if($line[0] =~ /(\S+)\@([^\@]+)$/) {
         $zfs{$1} ||= [];
         push @{$zfs{$1}}, $2;
