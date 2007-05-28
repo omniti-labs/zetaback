@@ -550,7 +550,7 @@ sub perform_retention($$) {
     foreach (@backup_points) {
       if(exists($info->{incremental}->{$_})) {
         print "   => $_ depends on $info->{incremental}->{$_}->{depends}\n" if($DEBUG);
-        $must_save{$info->{incremental}->{$_}} = 1
+        $must_save{$info->{incremental}->{$_}->{depends}} = 1
       }
     }
     my @removals = grep { !exists($must_save{$_}) } @backup_points;
