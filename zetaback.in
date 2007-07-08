@@ -16,7 +16,7 @@ use vars qw/%conf %locks $version_string
             $PREFIX $CONF $BLOCKSIZE $DEBUG $HOST $BACKUP
             $RESTORE $RESTORE_HOST $RESTORE_ZFS $TIMESTAMP
             $LIST $SUMMARY $SUMMARY_EXT $SUMMARY_VIOLATORS
-            $FORCE_FULL $EXPUNGE $NEUTERED $ZFS
+            $FORCE_FULL $EXPUNGE $NEUTERED $ZFS $SHOW_FILENAMES
             $VERSION $HELP/;
 $version_string = '0.1';
 $PREFIX = q^__PREFIX__^;
@@ -36,7 +36,7 @@ zetaback - perform backup, restore and retention policies for ZFS backups.
 
   zetaback -v
 
-  zetaback [-l | -s | -sx | -sv] [-c conf] [-d] [-h host] [-z zfs]
+  zetaback [-l | -s | -sx | -sv] [--files] [-c conf] [-d] [-h host] [-z zfs]
 
   zetaback -b [-f] [-x] [-c conf] [-d] [-n] [-h host] [-z zfs]
 
@@ -65,6 +65,7 @@ GetOptions(
   "x"       => \$EXPUNGE,
   "v"       => \$VERSION,
   "f"       => \$FORCE_FULL,
+  "files"   => \$SHOW_FILENAMES,
 );
 
 # actions allowed together 'x' and 'b' all others are exclusive:
@@ -182,6 +183,15 @@ incremental backups that are more recent than the last full backup.
 
 Display all ZFS disks in the current store that violate the configured
 retention policy.
+
+=item --files
+
+Display the on-disk file representing the backup for each backup named in
+the output.  This is useful with the -sv flag to name violating files.
+Often times, violators are filesystems that have been removed on the host
+machines and zetaback can no longer back them up.  Be very careful if you
+choose to automate the removal of such backups as filesystems that would be
+backed up by the next regular zetaback run will often show up as violators.
 
 =item -b
 
@@ -752,9 +762,11 @@ sub pretty_print_backup($$$) {
   if(exists($info->{full}->{$point})) {
     my @st = stat($info->{full}->{$point}->{file});
     print "FULL " . pretty_size($st[7]);
+    print "\n\tfile: $info->{full}->{$point}->{file}" if($SHOW_FILENAMES);
   } else {
     my @st = stat($info->{incremental}->{$point}->{file});
     print "INCR from [$info->{incremental}->{$point}->{depends}] " . pretty_size($st[7]);
+    print "\n\tfile: $info->{incremental}->{$point}->{file}" if($SHOW_FILENAMES);
   }
   print "\n";
 }
