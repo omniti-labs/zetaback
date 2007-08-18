@@ -17,7 +17,7 @@ use vars qw/%conf %locks $version_string
             $RESTORE $RESTORE_HOST $RESTORE_ZFS $TIMESTAMP
             $LIST $SUMMARY $SUMMARY_EXT $SUMMARY_VIOLATORS
             $FORCE_FULL $EXPUNGE $NEUTERED $ZFS $SHOW_FILENAMES
-            $VERSION $HELP/;
+            $ARCHIVE $VERSION $HELP/;
 $version_string = '0.1';
 $PREFIX = q^__PREFIX__^;
 $CONF = qq^$PREFIX/etc/zetaback.conf^;
@@ -38,6 +38,8 @@ zetaback - perform backup, restore and retention policies for ZFS backups.
 
   zetaback [-l | -s | -sx | -sv] [--files] [-c conf] [-d] [-h host] [-z zfs]
 
+  zetaback -a [-c conf] [-d] [-h host] [-z zfs]
+
   zetaback -b [-f] [-x] [-c conf] [-d] [-n] [-h host] [-z zfs]
 
   zetaback -x [-b] [-c conf] [-d] [-n] [-h host] [-z zfs]
@@ -51,6 +53,7 @@ GetOptions(
   "h=s"     => \$HOST,
   "z=s"     => \$ZFS,
   "c=s"     => \$CONF,
+  "a"       => \$ARCHIVE,
   "b"       => \$BACKUP,
   "l"       => \$LIST,
   "s"       => \$SUMMARY,
@@ -70,6 +73,7 @@ GetOptions(
 
 # actions allowed together 'x' and 'b' all others are exclusive:
 my $actions = 0;
+$actions++ if($ARCHIVE);
 $actions++ if($BACKUP || $EXPUNGE);
 $actions++ if($RESTORE);
 $actions++ if($LIST);
@@ -193,6 +197,15 @@ machines and zetaback can no longer back them up.  Be very careful if you
 choose to automate the removal of such backups as filesystems that would be
 backed up by the next regular zetaback run will often show up as violators.
 
+=item -a
+
+Performs an archive.  This option will look at all eligible backups points
+(as restricted by -z and -h) and move those to the configured archive
+directory.  The recommended use is to first issues -sx --files and
+carefully review available backup points and prune those that are
+unneeded.  Then invoked with -a to move only the remaining "desired"
+backup points into the archives.
+
 =item -b
 
 Performs a backup.  This option will investigate all eligible hosts, query
@@ -255,6 +268,12 @@ The following settings are valid in both the default and host scopes:
 The base directory under which to keep backups.  An interpolated variable
 '%h' can be used, which expands to the hostname.  There is no default for
 this setting.
+
+=item archive
+
+This is the base directory under which archives are stored.  The format
+is the same as the store setting.  This is destination to which files
+are relocated when issuing an archive action (-a).
 
 =item agent
 
@@ -775,6 +794,7 @@ sub show_backups($$$) {
   my ($host, $store, $diskpat) = @_;
   my $backup_info = scan_for_backups($store);
   my $tf = config_get($host, 'time_format');
+  my @files;
   foreach my $disk (sort keys %{$backup_info}) {
     my $info = $backup_info->{$disk};
     next unless(ref($info) eq 'HASH');
@@ -785,7 +805,7 @@ sub show_backups($$$) {
 
     my @backup_points = (keys %{$info->{full}}, keys %{$info->{incremental}});
     @backup_points = sort { $a <=> $b } @backup_points;
-    @backup_points = (pop @backup_points) unless ($SUMMARY_EXT || $SUMMARY_VIOLATORS);
+    @backup_points = (pop @backup_points) unless ($ARCHIVE || $SUMMARY_EXT || $SUMMARY_VIOLATORS);
 
     # Quick short-circuit in the case of retention violation checks
     if($SUMMARY_VIOLATORS) {
@@ -799,7 +819,7 @@ sub show_backups($$$) {
 
     # We want to see this one
     print "$host:$disk\n";
-    next unless($SUMMARY || $SUMMARY_EXT);
+    next unless($SUMMARY || $SUMMARY_EXT || $ARCHIVE);
     if($SUMMARY_EXT) {
       print "\tLast Full: ". ($info->{last_full} ? strftime($tf, localtime($info->{last_full})) : "Never") . "\n";
       if($info->{last_full} < $info->{last_incremental}) {
@@ -808,8 +828,26 @@ sub show_backups($$$) {
     }
     foreach (@backup_points) {
       pretty_print_backup($info, $host, $_);
+      push @files, exists($info->{full}->{$_}) ? $info->{full}->{$_}->{file} : $info->{incremental}->{$_}->{file};
     }
     print "\n";
+  }
+  if($ARCHIVE && scalar(@files)) {
+    my $archive = config_get($host, 'archive');
+    $archive =~ s/%h/$host/g;
+    if(! -d $archive) {
+      mkdir $archive || die "Cannot mkdir($archive)\n";
+    }
+    print "\nAre you sure you would like to archive ".scalar(@files)." file(s)? ";
+    while(($_ = <>) !~ /(?:y|n|yes|no)$/i) {
+      print "Are you sure you would like to archive ".scalar(@files)." file(s)? ";
+    }
+    if(/^y/i) {
+      foreach my $file (@files) {
+        (my $afile = $file) =~ s/^$store/$archive/;
+	rename($file, $afile) || print "Error archiving $file: $!\n";
+      }
+    }
   }
 }
 
@@ -925,7 +963,7 @@ else {
     $store =~ s/%h/$host/g;;
     mkdir $store if(! -d $store);
   
-    if($LIST || $SUMMARY || $SUMMARY_EXT || $SUMMARY_VIOLATORS) {
+    if($LIST || $SUMMARY || $SUMMARY_EXT || $SUMMARY_VIOLATORS || $ARCHIVE) {
       show_backups($host, $store, $ZFS);
     }
     if($BACKUP) {
