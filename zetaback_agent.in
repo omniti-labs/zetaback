@@ -153,6 +153,7 @@ This pattern matches specific ZFS filesystems.
 =cut
 
 # Read our config in
+$conf{pattern} = '.';
 open(CONF, "<$CONF");
 while(<CONF>) { /^\s*([^#](?:\S*)?)\s*=\s*(\S+)/ && ($conf{lc($1)} = $2); }
 close(CONF);
