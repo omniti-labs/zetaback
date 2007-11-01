@@ -33,8 +33,8 @@ install: all
 	$(pod2man) zetaback_agent zetaback_agent.1
 	$(install) -m 0755 zetaback ${DESTDIR}${bindir}/zetaback
 	$(install) -m 0755 zetaback_agent ${DESTDIR}${bindir}/zetaback_agent
-	$(install) -m 0644 zetaback.conf ${DESTDIR}${sysconfdir}/zetaback.conf
-	$(install) -m 0644 zetaback_agent.conf ${DESTDIR}${sysconfdir}/zetaback_agent.conf
+	$(install) -m 0644 zetaback.conf ${DESTDIR}${sysconfdir}/zetaback.conf.sample
+	$(install) -m 0644 zetaback_agent.conf ${DESTDIR}${sysconfdir}/zetaback_agent.conf.sample
 	$(install) -m 0644 zetaback.1 ${DESTDIR}${mandir}/man1/zetaback.1
 	$(install) -m 0644 zetaback_agent.1 ${DESTDIR}${mandir}/man1/zetaback_agent.1
 
