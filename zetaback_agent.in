@@ -6,14 +6,16 @@
 
 use strict;
 use Getopt::Long;
+use POSIX qw/mkfifo/;
 use Data::Dumper;
 
 use vars qw/%conf $version_string
             $PREFIX $CONF $LIST $FULL $SNAP $ZFS $BASE $RESTORE $VERSION
-            $BUG_6343779/;
+            $BUG_6343779 $NEEDSFD/;
 $version_string = '0.1';
 $PREFIX = q^__PREFIX__^;
 $CONF = qq^$PREFIX/etc/zetaback_agent.conf^;
+$NEEDSFD = ($^O eq 'darwin') ? 1 : 0;
 
 =pod
 
@@ -178,7 +180,11 @@ sub zfs_agent_perform_full {
   }
   `/usr/sbin/zfs snapshot $target`;
   my @cmd = ("/usr/sbin/zfs", "send", $target);
-  exec { $cmd[0] } @cmd;
+  if($NEEDSFD) {
+    fifo_exec(@cmd);
+  } else {
+    exec { $cmd[0] } @cmd;
+  }
   exit;
 }
 
@@ -190,7 +196,11 @@ sub zfs_agent_perform_incremental {
   }
   `/usr/sbin/zfs snapshot $target`;
   my @cmd = ("/usr/sbin/zfs", "send", "-i", $base, $target);
-  exec { $cmd[0] } @cmd;
+  if($NEEDSFD) {
+    fifo_exec(@cmd);
+  } else {
+    exec { $cmd[0] } @cmd;
+  }
   exit;
 }
 
@@ -231,6 +241,27 @@ sub zfs_agent_perform_restore {
   my @cmd = ("/usr/sbin/zfs", "recv", $ZFS);
   exec { $cmd[0] } @cmd;
   exit;
+}
+
+sub fifo_exec {
+  my @cmd = @_;
+  my $rv = -1;
+  my $fifo = "zetaback_${$}_${FULL}${BASE}.fifo";
+  mkfifo($fifo, 0600) || die "Could not create fifo: $!";
+  my $pid = fork();
+  if($pid == 0) {
+    close(STDOUT);
+    open(STDOUT, ">$fifo") || die "Could not open fifo: $!";
+    exec { $cmd[0] } @cmd;
+    exit;
+  }
+  open(FIFO, "<$fifo");
+  unlink($fifo);
+  my $buf;
+  while(my $len = sysread(FIFO, $buf, 1024*64)) {
+    syswrite(STDOUT, $buf, $len);
+  }
+  waitpid($pid, 0);
 }
 
 if($LIST) { zfs_agent_list(); exit; }
