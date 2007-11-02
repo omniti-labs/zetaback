@@ -863,7 +863,12 @@ sub plan_and_run($$$) {
 
     # We need a lock for the listing.
     return unless(lock($host, ".list"));
-    open(ZFSLIST, "ssh $host $agent -l |") || next;
+    open(SILENT, ">&", \*STDERR);
+    close(STDERR);
+    my $rv = open(ZFSLIST, "ssh $host $agent -l |")
+    open(STDERR, ">&", \*SILENT);
+    close(SILENT);
+    next unless $rv;
     @disklist = grep { chomp } (<ZFSLIST>);
     close(ZFSLIST);
 
