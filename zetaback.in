@@ -865,7 +865,7 @@ sub plan_and_run($$$) {
     return unless(lock($host, ".list"));
     open(SILENT, ">&", \*STDERR);
     close(STDERR);
-    my $rv = open(ZFSLIST, "ssh $host $agent -l |")
+    my $rv = open(ZFSLIST, "ssh $host $agent -l |");
     open(STDERR, ">&", \*SILENT);
     close(SILENT);
     next unless $rv;
