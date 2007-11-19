@@ -170,7 +170,7 @@ sub zfs_agent_remove_snap {
   else {
     die "zfs_agent_remove_snap: illegal snap: $SNAP\n";
   }
-  `/usr/sbin/zfs destroy $target`;
+  `__ZFS__ destroy $target`;
 }
 
 sub zfs_agent_perform_full {
@@ -178,8 +178,8 @@ sub zfs_agent_perform_full {
   unless($ZFS && $FULL =~ /^\d+$/) {
     die "zfs_agent_perform_full: bad fs or snap name\n"
   }
-  `/usr/sbin/zfs snapshot $target`;
-  my @cmd = ("/usr/sbin/zfs", "send", $target);
+  `__ZFS__ snapshot $target`;
+  my @cmd = ("__ZFS__", "send", $target);
   if($NEEDSFD) {
     fifo_exec(@cmd);
   } else {
@@ -194,8 +194,8 @@ sub zfs_agent_perform_incremental {
   unless($ZFS && $BASE) {
     die "zfs_agent_perform_incremental: bad args\n"
   }
-  `/usr/sbin/zfs snapshot $target`;
-  my @cmd = ("/usr/sbin/zfs", "send", "-i", $base, $target);
+  `__ZFS__ snapshot $target`;
+  my @cmd = ("__ZFS__", "send", "-i", $base, $target);
   if($NEEDSFD) {
     fifo_exec(@cmd);
   } else {
@@ -206,7 +206,7 @@ sub zfs_agent_perform_incremental {
 
 sub zfs_agent_list {
   my %zfs;
-  open(ZFSLIST, "/usr/sbin/zfs list -H |");
+  open(ZFSLIST, "__ZFS__ list -H |");
   while(<ZFSLIST>) {
     chomp;
     my @line = split /\t/;
@@ -235,10 +235,10 @@ sub zfs_agent_perform_restore {
   if($BUG_6343779) {
     # Optionally work around Solaris bug: 6343779
     my $base = $ZFS . '@__zb_full_' . $BUG_6343779;
-    `/usr/sbin/zfs unmount $ZFS`;
-    `/usr/sbin/zfs rollback $base`;
+    `__ZFS__ unmount $ZFS`;
+    `__ZFS__ rollback $base`;
   }
-  my @cmd = ("/usr/sbin/zfs", "recv", $ZFS);
+  my @cmd = ("__ZFS__", "recv", $ZFS);
   exec { $cmd[0] } @cmd;
   exit;
 }

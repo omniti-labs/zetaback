@@ -15,13 +15,16 @@ DESTDIR=
 mkinstalldirs=./mkinstalldirs
 install=./install-sh -c
 
+zfs=@ZFS@
 perl=@PERL@
 pod2man=@POD2MAN@
 
 all:
 	sed -e "s#/usr/bin/perl#$(perl)#;" -e "s#__PREFIX__#$(prefix)#;" \
+		-e "s#__ZFS__#$(zfs)#;" \
 	< zetaback.in > zetaback
 	sed -e "s#/usr/bin/perl#$(perl)#;" -e "s#__PREFIX__#$(prefix)#;" \
+		-e "s#__ZFS__#$(zfs)#;" \
 	< zetaback_agent.in > zetaback_agent
 
 install: all

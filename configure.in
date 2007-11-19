@@ -1,4 +1,5 @@
 AC_INIT(zetaback.in)
+AC_PATH_PROG(ZFS,zfs, ,/usr/sbin /sbin)
 AC_PATH_PROG(PERL,perl, ,/usr/bin /usr/perl5/bin)
 AC_PATH_PROG(POD2MAN,pod2man, ,/usr/bin /usr/perl5/bin)
 AC_SUBST(PERL)

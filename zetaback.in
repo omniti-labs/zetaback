@@ -751,7 +751,7 @@ sub zfs_restore_part($$$;$) {
     $command .= " -b $dep" if($dep);
   }
   else {
-    $command = "/usr/sbin/zfs recv $fs";
+    $command = "__ZFS__ recv $fs";
   }
   print " => piping $file to $command\n" if($DEBUG);
   if($NEUTERED) {
