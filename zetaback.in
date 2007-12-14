@@ -561,7 +561,7 @@ sub perform_retention($$) {
     my @backup_points = (keys %{$info->{full}}, keys %{$info->{incremental}});
     @backup_points = sort { $b <=> $a } @backup_points;
 
-    # We _cannot_ throw away _all_ out backups,
+    # We _cannot_ throw away _all_ our backups,
     # so save the most recent incremental and full no matter what
     $must_save{$backup_points[0]} = 1;
     my @fulls = grep { exists($info->{full}->{$_}) } @backup_points;
