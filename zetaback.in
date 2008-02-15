@@ -16,8 +16,8 @@ use vars qw/%conf %locks $version_string
             $PREFIX $CONF $BLOCKSIZE $DEBUG $HOST $BACKUP
             $RESTORE $RESTORE_HOST $RESTORE_ZFS $TIMESTAMP
             $LIST $SUMMARY $SUMMARY_EXT $SUMMARY_VIOLATORS
-            $FORCE_FULL $EXPUNGE $NEUTERED $ZFS $SHOW_FILENAMES
-            $ARCHIVE $VERSION $HELP/;
+            $FORCE_FULL $FORCE_INC $EXPUNGE $NEUTERED $ZFS
+            $SHOW_FILENAMES $ARCHIVE $VERSION $HELP/;
 $version_string = '0.1';
 $PREFIX = q^__PREFIX__^;
 $CONF = qq^$PREFIX/etc/zetaback.conf^;
@@ -67,7 +67,8 @@ GetOptions(
   "n"       => \$NEUTERED,
   "x"       => \$EXPUNGE,
   "v"       => \$VERSION,
-  "f"       => \$FORCE_FULL,
+  "ff"      => \$FORCE_FULL,
+  "fi"      => \$FORCE_INC,
   "files"   => \$SHOW_FILENAMES,
 );
 
@@ -81,6 +82,7 @@ $actions++ if($SUMMARY);
 $actions++ if($SUMMARY_EXT);
 $actions++ if($SUMMARY_VIOLATORS);
 $actions++ if($VERSION);
+$actions++ if($BACKUP && $FORCE_FULL && $FORCE_INC);
 if($actions != 1) {
   pod2usage({ -verbose => 0 });
   exit -1;
@@ -916,6 +918,7 @@ sub plan_and_run($$$) {
         $backup_type = 'full' unless($have_full_locally);
       }
       $backup_type = 'full' if($FORCE_FULL);
+      $backup_type = 'incremental' if($FORCE_INC);
 
       print " => doing $backup_type backup\n" if($DEBUG);
       # We need to drop a __zb_base snap or a __zb_incr snap before we proceed
