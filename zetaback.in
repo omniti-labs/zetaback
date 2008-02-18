@@ -9,6 +9,7 @@ use Getopt::Long;
 use MIME::Base64;
 use POSIX qw/strftime/;
 use Fcntl qw/:flock/;
+use File::Copy;
 use IO::File;
 use Pod::Usage;
 
@@ -858,7 +859,7 @@ sub show_backups($$$) {
     if(/^y/i) {
       foreach my $file (@files) {
         (my $afile = $file) =~ s/^$store/$archive/;
-	rename($file, $afile) || print "Error archiving $file: $!\n";
+	move($file, $afile) || print "Error archiving $file: $!\n";
       }
     }
   }
