@@ -26,6 +26,7 @@ $BLOCKSIZE = 1024*64;
 
 $conf{'default'}->{'time_format'} = "%Y-%m-%d %H:%M:%S";
 $conf{'default'}->{'retention'} = 14 * 86400;
+$conf{'default'}->{'compressionlevel'} = 1;
 
 =pod
 
@@ -317,6 +318,12 @@ backup.
 The retention time (in seconds) for backups.  Defaults to (14 * 86400), or two
 weeks.
 
+=item compressionlevel
+
+Compress files using gzip at the specified compression level. 0 means no
+compression. Accepted values are 1-9. Defaults to 1 (fastest/minimal
+compression).
+
 =back
 
 =head1 CONFIGURATION EXAMPLES
@@ -373,7 +380,7 @@ my $stanza_re = qr/($str_re)\s*\{((?:\s*$kvp_re)*)\s*\}/;
 sub parse_config() {
   local($/);
   $/ = undef;
-  open(CONF, "<$CONF");
+  open(CONF, "<$CONF") || die "Unable to open config file: $CONF";
   my $file = <CONF>;
   # Rip comments
   $file =~ s/^\s*#.*$//mg;
@@ -505,7 +512,14 @@ sub zfs_do_backup($$$$$$) {
   my $agent = config_get($host, 'agent');
 
   # Do it. yeah.
-  open(LBACKUP, ">$store/.$dumpfile") || die "zfs_full_backup: cannot create dump\n";
+  my $cl = config_get($host, 'compressionlevel');
+  if ($cl >= 1 && $cl <= 9) {
+    open(LBACKUP, "|gzip -$cl >$store/.$dumpfile") ||
+      die "zfs_full_backup: cannot create dump\n";
+  } else {
+    open(LBACKUP, ">$store/.$dumpfile") ||
+      die "zfs_full_backup: cannot create dump\n";
+  }
   eval {
     if(my $pid = fork()) {
       close(LBACKUP);
