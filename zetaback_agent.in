@@ -206,7 +206,7 @@ sub zfs_agent_perform_incremental {
 
 sub zfs_agent_list {
   my %zfs;
-  open(ZFSLIST, "__ZFS__ list -H |");
+  open(ZFSLIST, "__ZFS__ list -H -t snapshot,filesystem |");
   while(<ZFSLIST>) {
     chomp;
     my @line = split /\t/;
