@@ -124,6 +124,13 @@ The zetaback_agent configuration file contains a pattern list of ZFS
 filesystems to be backed up.  The pattern list is a Perl-compatible 
 regular expression (PCRE).  Only one 'pattern=' line is permitted.
 
+The pattern acts as a filter to reduce the list of filesystems to
+be backed up.  Further excludes from this list are possible by setting
+a user property on any filesystem that should not be backed up, even
+if it matches the pattern:
+
+  zfs set com.omniti.labs.zetaback:exclude=on <zfs>
+
 =head1 CONFIGURATION EXAMPLES
 
 =head2 All ZFS filesystems
@@ -151,6 +158,15 @@ This pattern matches all ZFS filesystems whose names begin with 'www'.
 This pattern matches specific ZFS filesystems.
 
   pattern=(?:data|mirrors|www)
+
+=head2 Combining with property-based exclude
+
+All filesystems in pool 'zones' except 'foo'
+
+  pattern=^zones
+  
+  (At a root shell or with pfexec/sudo):
+  zfs set com.omniti.labs.zetaback:exclude=on zones/foo
 
 =cut
 
