@@ -131,6 +131,9 @@ if it matches the pattern:
 
   zfs set com.omniti.labs.zetaback:exclude=on <zfs>
 
+User properties are available on Solaris 10 8/07 and newer, and on
+Solaris Express build 48 and newer.
+
 =head1 CONFIGURATION EXAMPLES
 
 =head2 All ZFS filesystems
