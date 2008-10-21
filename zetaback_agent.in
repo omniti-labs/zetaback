@@ -109,6 +109,8 @@ Print the version number and exit.
 
 Specify a ZFS filesystem to backup, restore, or delete.
 
+=back
+
 =cut
 
 if($VERSION) {
@@ -129,7 +131,7 @@ be backed up.  Further excludes from this list are possible by setting
 a user property on any filesystem that should not be backed up, even
 if it matches the pattern:
 
-  zfs set com.omniti.labs.zetaback:exclude=on <zfs>
+  zfs set com.omniti.labs.zetaback:exclude=on pool/fs
 
 User properties are available on Solaris 10 8/07 and newer, and on
 Solaris Express build 48 and newer.
@@ -167,7 +169,7 @@ This pattern matches specific ZFS filesystems.
 All filesystems in pool 'zones' except 'foo'
 
   pattern=^zones
-  
+
   (At a root shell or with pfexec/sudo):
   zfs set com.omniti.labs.zetaback:exclude=on zones/foo
 
