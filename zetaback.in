@@ -95,7 +95,7 @@ if($actions != 1) {
 =head1 DESCRIPTION
 
 The B<zetaback> program orchestrates the backup (either full or
-incremental) of remote ZFS filesysetms to a local store.  It handles
+incremental) of remote ZFS filesystems to a local store.  It handles
 frequency requirements for both full and incemental backups as well
 as retention policies.  In addition to backups, the B<zetaback> tool
 allows for the restore of any backup to a specified host and zfs
@@ -104,12 +104,12 @@ filesystem.
 =head1 OPTIONS
 
 The non-optional action command line arguments define the invocation purpose
-of B<zetaback>.  All other options are optional and refine the target
+of B<zetaback>.  All other arguments are optional and refine the target
 of the action specified.
 
 =head2 Generic Options
 
-The following options have the same meaning over several actions:
+The following arguments have the same meaning over several actions:
 
 =over
 
@@ -126,14 +126,14 @@ Enable debugging output.
 =item -n
 
 Don't actually perform any remote commands or expunging.  This is useful with
-the -d options to ascertain what would be done if the command was actually
+the -d argument to ascertain what would be done if the command was actually
 executed.
 
 =item -t <timestamp>
 
 Used during the restore process to specify a backup image from the desired 
 point in time.  If omitted, the command becomes interactive.  This timestamp
-is a UNIX timestamp and is shown in output of -s and -sx actions.
+is a UNIX timestamp and is shown in the output of the -s and -sx actions.
 
 =item -rhost <host>
 
@@ -149,15 +149,14 @@ operation.  If omitted the command becomes interactive.
 
 Filters the operation to the host specified.  If <host> is of the form
 /pattern/, it matches 'pattern' as a perl regular expression against available
-hosts.  If this option is omitted, no limit is enforced and all hosts are
-used for the action.
+hosts.  If omitted, no limit is enforced and all hosts are used for the action.
 
 =item -z <zfs>
 
 Filters the operation to the zfs filesystem specified.  If <zfs> is of the
 form /pattern/, it matches 'pattern' as a perl regular expression against
-available zfs filesystems.  If this option is omitted, no filter is enforced
-and all zfs filesystems are used for the action.
+available zfs filesystems.  If omitted, no filter is enforced and all zfs 
+filesystems are used for the action.
 
 =back
 
@@ -175,13 +174,13 @@ Show a brief listing of available backups.
 
 =item -s
 
-Like -l, -s will show a list of backups but provides also the most recent
-backup information including timestamp type (full or incremental) and the
+Like -l, -s will show a list of backups but provides additional information
+about the backups including timestamp, type (full or incremental) and the
 size on disk.
 
 =item -sx
 
-Shows a extended summary.  In addition to the output provided by the -s
+Shows an extended summary.  In addition to the output provided by the -s
 action, the -sx action will show detail for each availble backup.  For
 full backups, the detail will include any more recent full backups, if
 they exist.  For incremental backups, the detail will include any
@@ -189,25 +188,25 @@ incremental backups that are more recent than the last full backup.
 
 =item -sv
 
-Display all ZFS disks in the current store that violate the configured
+Display all backups in the current store that violate the configured 
 retention policy.
 
 =item --files
 
-Display the on-disk file representing the backup for each backup named in
-the output.  This is useful with the -sv flag to name violating files.
-Often times, violators are filesystems that have been removed on the host
-machines and zetaback can no longer back them up.  Be very careful if you
-choose to automate the removal of such backups as filesystems that would be
-backed up by the next regular zetaback run will often show up as violators.
+Display the on-disk file corresponding to each backup named in the output.
+This is useful with the -sv flag to name violating files.  Often times, 
+violators are filesystems that have been removed on the host machines and 
+zetaback can no longer back them up.  Be very careful if you choose to 
+automate the removal of such backups as filesystems that would be backed up 
+by the next regular zetaback run will often show up as violators.
 
 =item -a
 
-Performs an archive.  This option will look at all eligible backups points
+Performs an archive.  This option will look at all eligible backup points
 (as restricted by -z and -h) and move those to the configured archive
-directory.  The recommended use is to first issues -sx --files and
+directory.  The recommended use is to first issue -sx --files then
 carefully review available backup points and prune those that are
-unneeded.  Then invoked with -a to move only the remaining "desired"
+unneeded.  Then invoke with -a to move only the remaining "desired"
 backup points into the archives.  Archived backups do not appear in any
 listings or in the list of policy violators generated by the -sv option.
 In effect, they are no longer "visible" to zetaback.
@@ -221,17 +220,17 @@ option may be combined with the -x option (to clean up afterwards.)
 
 =item -ff
 
-Forces a full backup to be taken on each disk encountered.  This is used
-in combination with -b.  It is recommended to use this option only when
-targeting specific disks (via the -h and -z options.)  Forcing a full
+Forces a full backup to be taken on each filesystem encountered.  This is 
+used in combination with -b.  It is recommended to use this option only when
+targeting specific filesystems (via the -h and -z options.)  Forcing a full
 backup across all machines will cause staggered backups to coalesce and
 could cause performance issues.
 
 =item -fi
 
-Forces an incremental backup to be taken on each disk encountered.  
+Forces an incremental backup to be taken on each filesystem encountered.  
 This is used in combination with -b.  It is recommended to use this option 
-only when targeting specific disks (via the -h and -z options.)  Forcing 
+only when targeting specific filesystems (via the -h and -z options.)  Forcing 
 an incremental backup across all machines will cause staggered backups 
 to coalesce and could cause performance issues.
 
@@ -244,7 +243,7 @@ configuration.
 =item -r
 
 Perform a restore.  This option will operate on the specified backup and
-restore it to the zfs filesystem specified with -rzfs on the host specified
+restore it to the ZFS filesystem specified with -rzfs on the host specified
 with the -rhost option.  The -h, -z and -t options may be used to filter
 the source backup list.  If the filtered list contains more than one
 source backup image, the command will act interactively.  If the -rhost
@@ -285,9 +284,9 @@ this setting.
 
 =item archive
 
-This is the base directory under which archives are stored.  The format
-is the same as the store setting.  This is destination to which files
-are relocated when issuing an archive action (-a).
+The base directory under which archives are stored.  The format is the same
+as the store setting.  This is the destination to which files are relocated 
+when issuing an archive action (-a).
 
 =item agent
 
@@ -296,7 +295,7 @@ for this setting.
 
 =item time_format
 
-All timestamps within zetaback are in Unix timestamp format.  This setting
+All timestamps within zetaback are in UNIX timestamp format.  This setting
 provides a string for formatting all timestamps on output.  The sequences
 available are identical to those in strftime(3).  If not specified, the
 default is '%Y-%m-%d %H:%M:%S'.
