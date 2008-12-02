@@ -325,6 +325,12 @@ Compress files using gzip at the specified compression level. 0 means no
 compression. Accepted values are 1-9. Defaults to 1 (fastest/minimal
 compression.)
 
+=item ssh_config
+
+Full path to an alternate ssh client config.  This is useful for specifying a
+less secure but faster cipher for some hosts, or using a different private 
+key.  There is no default for this setting.
+
 =back
 
 =head1 CONFIGURATION EXAMPLES
@@ -502,15 +508,19 @@ sub zetaback_log($$;@) {
 sub zfs_remove_snap($$$) {
   my ($host, $fs, $snap) = @_;
   my $agent = config_get($host, 'agent');
+  my $ssh_config = config_get($host, 'ssh_config');
+  $ssh_config = "-F $ssh_config" if($ssh_config);
   return unless($snap);
   print "Dropping $snap on $fs\n" if($DEBUG);
-  `ssh $host $agent -z $fs -d $snap`;
+  `ssh $ssh_config $host $agent -z $fs -d $snap`;
 }
 
 # Lots of args.. internally called.
 sub zfs_do_backup($$$$$$) {
   my ($host, $fs, $type, $point, $store, $dumpfile) = @_;
   my $agent = config_get($host, 'agent');
+  my $ssh_config = config_get($host, 'ssh_config');
+  $ssh_config = "-F $ssh_config" if($ssh_config);
 
   # Do it. yeah.
   my $cl = config_get($host, 'compressionlevel');
@@ -528,7 +538,7 @@ sub zfs_do_backup($$$$$$) {
       die "error: $?" if($?);
     }
     else {
-      my @cmd = ('ssh', $host, $agent, '-z', $fs, "-$type", $point);
+      my @cmd = ('ssh', $ssh_config, $host, $agent, '-z', $fs, "-$type", $point);
       open STDIN, "/dev/null" || exit(-1);
       open STDOUT, ">&LBACKUP" || exit(-1);
       exec { $cmd[0] } @cmd;
@@ -773,6 +783,8 @@ sub perform_restore() {
 
 sub zfs_restore_part($$$;$) {
   my ($host, $fs, $file, $dep) = @_;
+  my $ssh_config = config_get($host, 'ssh_config');
+  $ssh_config = "-F $ssh_config" if($ssh_config);
   my $command;
   if(exists($conf{$host})) {
     my $agent = config_get($host, 'agent');
@@ -784,12 +796,12 @@ sub zfs_restore_part($$$;$) {
   }
   print " => piping $file to $command\n" if($DEBUG);
   if($NEUTERED) {
-    print "gzip -dfc $file | ssh $host $command\n" if ($DEBUG);
+    print "gzip -dfc $file | ssh $ssh_config $host $command\n" if ($DEBUG);
   }
   else {
     open(DUMP, "gzip -dfc $file |");
     eval {
-      open(RECEIVER, "| ssh $host $command");
+      open(RECEIVER, "| ssh $ssh_config $host $command");
       my $buffer;
       while(my $len = sysread(DUMP, $buffer, $BLOCKSIZE)) {
         if(syswrite(RECEIVER, $buffer, $len) != $len) {
@@ -882,6 +894,8 @@ sub show_backups($$$) {
 
 sub plan_and_run($$$) {
   my ($host, $store, $diskpat) = @_;
+  my $ssh_config = config_get($host, 'ssh_config');
+  $ssh_config = "-F $ssh_config" if($ssh_config);
   my %suppress;
   print "Planning '$host'\n" if($DEBUG);
   my $agent = config_get($host, 'agent');
@@ -894,7 +908,7 @@ sub plan_and_run($$$) {
     return unless(lock($host, ".list"));
     open(SILENT, ">&", \*STDERR);
     close(STDERR);
-    my $rv = open(ZFSLIST, "ssh $host $agent -l |");
+    my $rv = open(ZFSLIST, "ssh $ssh_config $host $agent -l |");
     open(STDERR, ">&", \*SILENT);
     close(SILENT);
     next unless $rv;
