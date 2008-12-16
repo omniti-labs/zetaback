@@ -510,6 +510,7 @@ sub zfs_remove_snap($$$) {
   my $agent = config_get($host, 'agent');
   my $ssh_config = config_get($host, 'ssh_config');
   $ssh_config = "-F $ssh_config" if($ssh_config);
+  print "Using custom ssh config file: $ssh_config\n" if($DEBUG);
   return unless($snap);
   print "Dropping $snap on $fs\n" if($DEBUG);
   `ssh $ssh_config $host $agent -z $fs -d $snap`;
@@ -521,6 +522,7 @@ sub zfs_do_backup($$$$$$) {
   my $agent = config_get($host, 'agent');
   my $ssh_config = config_get($host, 'ssh_config');
   $ssh_config = "-F $ssh_config" if($ssh_config);
+  print "Using custom ssh config file: $ssh_config\n" if($DEBUG);
 
   # Do it. yeah.
   my $cl = config_get($host, 'compressionlevel');
@@ -538,7 +540,7 @@ sub zfs_do_backup($$$$$$) {
       die "error: $?" if($?);
     }
     else {
-      my @cmd = ('ssh', $ssh_config, $host, $agent, '-z', $fs, "-$type", $point);
+      my @cmd = ('ssh', split(/ /, $ssh_config), $host, $agent, '-z', $fs, "-$type", $point);
       open STDIN, "/dev/null" || exit(-1);
       open STDOUT, ">&LBACKUP" || exit(-1);
       exec { $cmd[0] } @cmd;
@@ -785,6 +787,7 @@ sub zfs_restore_part($$$;$) {
   my ($host, $fs, $file, $dep) = @_;
   my $ssh_config = config_get($host, 'ssh_config');
   $ssh_config = "-F $ssh_config" if($ssh_config);
+  print "Using custom ssh config file: $ssh_config\n" if($DEBUG);
   my $command;
   if(exists($conf{$host})) {
     my $agent = config_get($host, 'agent');
