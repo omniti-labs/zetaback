@@ -983,11 +983,19 @@ sub plan_and_run($$$) {
           $took_action = 1;
         }
         if($backup_type eq 'incremental') {
-          zfs_remove_snap($host, $diskname, '__zb_incr') if($snaps{'__zb_incr'});
-          # Find the newest full from which to do an incremental (NOTE: reverse numeric sort)
-          my @fulls = sort { $b <=> $a } (keys %{$backup_info->{'full'}});
-          zfs_incremental_backup($host, $diskname, $fulls[0], $store);
-          $took_action = 1;
+          eval { 
+            zfs_remove_snap($host, $diskname, '__zb_incr') if($snaps{'__zb_incr'});
+            # Find the newest full from which to do an incremental (NOTE: reverse numeric sort)
+            my @fulls = sort { $b <=> $a } (keys %{$backup_info->{'full'}});
+            zfs_incremental_backup($host, $diskname, $fulls[0], $store);
+          };
+          if ($@) {
+            chomp(my $err = $@);
+            print " => failure $err\n";
+          }
+          else { 
+            $took_action = 1;
+          }
         }
         unlock($host, dir_encode($diskname), 1);
       }
