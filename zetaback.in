@@ -1043,7 +1043,7 @@ exit 0;
 
 =over
 
-=item /usr/local/etc/zetaback.conf
+=item zetaback.conf
 
 The main zetaback configuration file.  The location of the file can be
 specified on the command line with the -c flag.  The prefix of this 
