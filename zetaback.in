@@ -19,7 +19,9 @@ use vars qw/%conf %locks $version_string
             $LIST $SUMMARY $SUMMARY_EXT $SUMMARY_VIOLATORS
             $FORCE_FULL $FORCE_INC $EXPUNGE $NEUTERED $ZFS
             $SHOW_FILENAMES $ARCHIVE $VERSION $HELP/;
-$version_string = '0.1';
+$version_string = q$URL$;
+$version_string =~ s#/branches/#/b#;
+$version_string =~ s#^.*/([^/]+)/[^/]+$#$1#;
 $PREFIX = q^__PREFIX__^;
 $CONF = qq^$PREFIX/etc/zetaback.conf^;
 $BLOCKSIZE = 1024*64;
