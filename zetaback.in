@@ -191,7 +191,9 @@ incremental backups that are more recent than the last full backup.
 =item -sv
 
 Display all backups in the current store that violate the configured 
-retention policy.
+backup policy. This is where the most recent full backup is older than
+full_interval seconds ago, or the most recent incremental backup is older
+than backup_interval seconds ago.
 
 =item --files
 
@@ -858,7 +860,8 @@ sub show_backups($$$) {
       if(time() > $info->{last_full} + config_get($host, 'full_interval') ||
          time() > $info->{last_backup} + config_get($host, 'backup_interval')) {
         print "$host:$disk\n";
-        pretty_print_backup($info, $host, $backup_points[0]);
+        pretty_print_backup($info, $host, $info->{last_full});
+        pretty_print_backup($info, $host, $info->{last_backup});
       }
       next;
     }
