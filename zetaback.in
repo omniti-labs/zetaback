@@ -861,7 +861,10 @@ sub show_backups($$$) {
          time() > $info->{last_backup} + config_get($host, 'backup_interval')) {
         print "$host:$disk\n";
         pretty_print_backup($info, $host, $info->{last_full});
-        pretty_print_backup($info, $host, $info->{last_backup});
+        # Only print the last backup if it isn't the same as the last full
+        if ($info->{last_full} != $info->{last_backup}) {
+            pretty_print_backup($info, $host, $info->{last_backup});
+        }
       }
       next;
     }
