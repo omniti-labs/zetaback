@@ -509,11 +509,13 @@ sub scan_for_backups($) {
   while (<ZFSLIST>) {
       my @F = split(' ');
       my ($fs, $snap) = split('@', $F[0]);
-      my $whence = ($snap =~ /__zb_dset_(\d+)/);
+      $fs =~ s/$storefs\/?//;
+      my ($whence) = ($snap =~ /__zb_dset_(\d+)/);
+      next unless $whence;
       $info{$fs}->{full}->{$whence}->{'snapshot'} = $snap;
       # TODO - the info may need to be different here - no last_full or
       # last_incremental
-      #$info{$fs}->{last_full} = $whence if($whence > $info{$fs}->{last_full});
+      $info{$fs}->{last_full} = $whence if($whence > $info{$fs}->{last_full});
       $info{$fs}->{last_backup} = $whence if ($whence >
           $info{$fs}->{last_backup});
   }
@@ -595,8 +597,6 @@ sub zfs_do_backup($$$$$$) {
     }
   };
   if($@) {
-    # TODO - what to do if you fail to receive a full zfs stream?
-    # nothing?
     unlink("$store/.$dumpname");
     chomp(my $error = $@);
     $error =~ s/[\r\n]+/ /gsm;
@@ -641,8 +641,6 @@ sub zfs_dataset_backup($$$$) {
   my $agent = config_get($host, 'agent');
 
   my $point = time();
-  # Replace slashes with underscores in the fs name
-  my $efs = ($fs =~ s/\//_/g);
   my $dumpname = "$host/$fs\@$point";
 
   zfs_do_backup($host, $fs, 'd', $base, $store, $dumpname);
