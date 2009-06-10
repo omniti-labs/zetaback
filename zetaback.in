@@ -476,6 +476,7 @@ sub scan_for_backups($) {
   my %info = ();
   my $dir = shift;
   $info{last_full} = $info{last_incremental} = $info{last_backup} = 0;
+  # Look for standard file based backups first
   opendir(D, $dir) || return \%info;
   foreach my $file (readdir(D)) {
     if($file =~ /^(\d+)\.([^\.]+)\.full$/) {
@@ -497,6 +498,28 @@ sub scan_for_backups($) {
     }
   }
   closedir(D);
+  # Now look for zfs based backups
+  my $storefs;
+  eval {
+    $storefs = get_fs_from_mountpoint($dir);
+  };
+  return \%info if ($@);
+  my $rv = open(ZFSLIST, "__ZFS__ list -H -r -t snapshot $storefs |");
+  return \%info unless $rv;
+  while (<ZFSLIST>) {
+      my @F = split(' ');
+      my ($fs, $snap) = split('@', $F[0]);
+      my $whence = ($snap =~ /__zb_dset_(\d+)/);
+      $info{$fs}->{full}->{$whence}->{'snapshot'} = $snap;
+      # TODO - the info may need to be different here - no last_full or
+      # last_incremental
+      #$info{$fs}->{last_full} = $whence if($whence > $info{$fs}->{last_full});
+      $info{$fs}->{last_backup} = $whence if ($whence >
+          $info{$fs}->{last_backup});
+  }
+  close(ZFSLIST);
+  die "Unable to determine zfs filesystem for $dir" unless $storefs;
+
   return \%info;
 }
 
@@ -557,8 +580,8 @@ sub zfs_do_backup($$$$$$) {
       my @cmd = ('ssh', split(/ /, $ssh_config), $host, $agent, '-z', $fs, "-$type", $point);
       open STDIN, "/dev/null" || exit(-1);
       if ($type eq "d") {
-        # TODO - specify the filesystem name to receive to here
-        open STDOUT, "|zfs recv $dumpname"
+        my $storefs = get_fs_from_mountpoint($store);
+        open STDOUT, "|__ZFS__ recv $storefs/$dumpname"
       } else {
         open STDOUT, ">&LBACKUP" || exit(-1);
       }
@@ -585,8 +608,7 @@ sub zfs_do_backup($$$$$$) {
     my @st = stat("$store/$dumpname");
     $size = pretty_size($st[7]);
   } else {
-    # TODO - get correct name of the snapshot here in place of dumpname
-    $size = `zfs get -Ho value used $dumpname`;
+    $size = `__ZFS__ get -Ho value used $dumpname`;
   }
   zetaback_log($host, "SUCCESS[$size] $host:$fs $type\n");
 }
@@ -619,7 +641,8 @@ sub zfs_dataset_backup($$$$) {
   my $agent = config_get($host, 'agent');
 
   my $point = time();
-  # TODO - either put the filesystem 
+  # Replace slashes with underscores in the fs name
+  my $efs = ($fs =~ s/\//_/g);
   my $dumpname = "$host/$fs\@$point";
 
   zfs_do_backup($host, $fs, 'd', $base, $store, $dumpname);
@@ -737,6 +760,23 @@ sub backup_chain($$) {
     push @list, backup_chain($info, $info->{incremental}->{$ts}->{depends});
   }
   return @list;
+}
+
+sub get_fs_from_mountpoint($) {
+    my ($mountpoint) = @_;
+    my $fs;
+    my $rv = open(ZFSLIST, "__ZFS__ list -H |");
+    die "Unable to determine zfs filesystem for $mountpoint" unless $rv;
+    while (<ZFSLIST>) {
+        my @F = split(' ');
+        if ($F[-1] eq $mountpoint) {
+            $fs = $F[0];
+            last;
+        }
+    }
+    close(ZFSLIST);
+    die "Unable to determine zfs filesystem for $mountpoint" unless $fs;
+    return $fs;
 }
 
 sub perform_restore() {
@@ -953,6 +993,8 @@ sub plan_and_run($$$) {
 
     # We need a lock for the listing.
     return unless(lock($host, ".list"));
+
+    # Get list of zfs filesystems from the agent
     open(SILENT, ">&", \*STDERR);
     close(STDERR);
     my $rv = open(ZFSLIST, "ssh $ssh_config $host $agent -l |");
