@@ -90,7 +90,8 @@ Perform an incremental backup.  The name of the backup will include
 =item -s <timestamp>
 
 Perform a dataset backup.  The name of the backup will include 
-<timestamp>, which is provided by the backup server.
+<timestamp>, which is provided by the backup server. This requires the -i
+option to specify the base dataset the expected by the backup server.
 
 =item -l
 
@@ -317,8 +318,8 @@ if($LIST) { zfs_agent_list(); exit; }
 if($ZFS && $SNAP) { zfs_agent_remove_snap(); exit; }
 if($ZFS && $RESTORE) { zfs_agent_perform_restore(); exit; }
 if($ZFS && $FULL) { zfs_agent_perform_full(); exit; }
+if($ZFS && $DSET && $BASE) { zfs_agent_perform_dataset(); exit; }
 if($ZFS && $BASE) { zfs_agent_perform_incremental(); exit; }
-if($ZFS && $DSET) { zfs_agent_perform_dataset(); exit; }
 
 =pod
 

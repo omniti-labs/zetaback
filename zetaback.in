@@ -553,8 +553,8 @@ sub zfs_remove_snap($$$) {
 }
 
 # Lots of args.. internally called.
-sub zfs_do_backup($$$$$$) {
-  my ($host, $fs, $type, $point, $store, $dumpname) = @_;
+sub zfs_do_backup($$$$$$;$) {
+  my ($host, $fs, $type, $point, $store, $dumpname, $base) = @_;
   my $agent = config_get($host, 'agent');
   my $ssh_config = config_get($host, 'ssh_config');
   $ssh_config = "-F $ssh_config" if($ssh_config);
@@ -580,7 +580,13 @@ sub zfs_do_backup($$$$$$) {
       die "error: $?" if($?);
     }
     else {
-      my @cmd = ('ssh', split(/ /, $ssh_config), $host, $agent, '-z', $fs, "-$type", $point);
+      my @cmd = ('ssh', split(/ /, $ssh_config), $host, $agent, '-z', $fs)
+      if ($type eq "i" || $type eq "s") {
+        push @cmd ("-i", $base);
+      }
+      if ($type eq "f" || $type eq "s") {
+        push @cmd ("-$type", $point);
+      }
       open STDIN, "/dev/null" || exit(-1);
       if ($type eq "s") {
         my $storefs = get_fs_from_mountpoint($store);
@@ -634,7 +640,7 @@ sub zfs_incremental_backup($$$$) {
   my $efs = dir_encode($fs);
   my $dumpname = "$point.$efs.incremental.$base";
 
-  zfs_do_backup($host, $fs, 'i', $base, $store, $dumpname);
+  zfs_do_backup($host, $fs, 'i', $point, $store, $dumpname, $base);
 }
 
 sub zfs_dataset_backup($$$$) {
@@ -644,7 +650,7 @@ sub zfs_dataset_backup($$$$) {
   my $point = time();
   my $dumpname = "$host/$fs\@$point";
 
-  zfs_do_backup($host, $fs, 's', $base, $store, $dumpname);
+  zfs_do_backup($host, $fs, 's', $point, $store, $dumpname, $base);
 }
 
 sub perform_retention($$) {
