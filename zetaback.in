@@ -512,10 +512,11 @@ sub scan_for_backups($) {
       $fs =~ s/$storefs\/?//;
       my ($whence) = ($snap =~ /__zb_dset_(\d+)/);
       next unless $whence;
+      # Treat a dataset backup as a full backup from the point of view of the
+      # backup lists
       $info{$fs}->{full}->{$whence}->{'snapshot'} = $snap;
-      # TODO - the info may need to be different here - no last_full or
-      # last_incremental
-      $info{$fs}->{last_full} = $whence if($whence > $info{$fs}->{last_full});
+      $info{$fs}->{last_full} = $whence if ($whence >
+          $info{$fs}->{last_full});
       $info{$fs}->{last_backup} = $whence if ($whence >
           $info{$fs}->{last_backup});
   }
@@ -561,7 +562,7 @@ sub zfs_do_backup($$$$$$) {
 
 
   # compression is meaningless for dataset backups
-  if ($type ne "d") {
+  if ($type ne "s") {
     my $cl = config_get($host, 'compressionlevel');
     if ($cl >= 1 && $cl <= 9) {
         open(LBACKUP, "|gzip -$cl >$store/.$dumpname") ||
@@ -574,14 +575,14 @@ sub zfs_do_backup($$$$$$) {
   # Do it. yeah.
   eval {
     if(my $pid = fork()) {
-      close(LBACKUP) unless ($type eq "d");
+      close(LBACKUP) unless ($type eq "s");
       waitpid($pid, 0);
       die "error: $?" if($?);
     }
     else {
       my @cmd = ('ssh', split(/ /, $ssh_config), $host, $agent, '-z', $fs, "-$type", $point);
       open STDIN, "/dev/null" || exit(-1);
-      if ($type eq "d") {
+      if ($type eq "s") {
         my $storefs = get_fs_from_mountpoint($store);
         open STDOUT, "|__ZFS__ recv $storefs/$dumpname"
       } else {
@@ -591,7 +592,7 @@ sub zfs_do_backup($$$$$$) {
       print STDERR "$cmd[0] failed: $?\n";
       exit($?);
     }
-    if ($type ne "d") {
+    if ($type ne "s") {
         die "dump failed (zero bytes)\n" if(-z "$store/.$dumpname");
         rename("$store/.$dumpname", "$store/$dumpname") || die "cannot rename dump\n";
     }
@@ -604,7 +605,7 @@ sub zfs_do_backup($$$$$$) {
     die "zfs_full_backup: failed $@";
   }
   my $size;
-  if ($type ne "d") {
+  if ($type ne "s") {
     my @st = stat("$store/$dumpname");
     $size = pretty_size($st[7]);
   } else {
@@ -643,7 +644,7 @@ sub zfs_dataset_backup($$$$) {
   my $point = time();
   my $dumpname = "$host/$fs\@$point";
 
-  zfs_do_backup($host, $fs, 'd', $base, $store, $dumpname);
+  zfs_do_backup($host, $fs, 's', $base, $store, $dumpname);
 }
 
 sub perform_retention($$) {
@@ -1032,7 +1033,6 @@ sub plan_and_run($$$) {
       if(time() > $backup_info->{last_full} + config_get($host, 'full_interval')) {
         $backup_type = 'full';
       }
-  
       # If we want an incremental, but have no full, then we need to upgrade to full
       if($backup_type eq 'incremental') {
         my $have_full_locally = 0;
@@ -1044,6 +1044,7 @@ sub plan_and_run($$$) {
       }
       $backup_type = 'full' if($FORCE_FULL);
       $backup_type = 'incremental' if($FORCE_INC);
+      $backup_type = 'dataset' if(config_get($host, 'dataset_backup') eq 1);
 
       print " => doing $backup_type backup\n" if($DEBUG);
       # We need to drop a __zb_base snap or a __zb_incr snap before we proceed
@@ -1080,6 +1081,21 @@ sub plan_and_run($$$) {
           else { 
             $took_action = 1;
           }
+        }
+        if($backup_type eq 'dataset') {
+          my @backups = sort { $b <=> $a } (keys %{$backup_info->{'full'}});
+          eval { zfs_dataset_backup($host, $diskname, $backups[0], $store); };
+          if ($@) {
+            chomp(my $err = $@);
+            print " => failure $err\n";
+          }
+          else {
+            # Unless there was an error backing up, remove all the other dset snaps
+            foreach (keys %snaps) {
+              zfs_remove_snap($host, $diskname, $_) if(/^__zb_dset_(\d+)/) 
+            }
+          }
+          $took_action = 1;
         }
         unlock($host, dir_encode($diskname), 1);
       }

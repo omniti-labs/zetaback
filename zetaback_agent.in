@@ -11,7 +11,7 @@ use Data::Dumper;
 
 use vars qw/%conf $version_string
             $PREFIX $CONF $LIST $FULL $SNAP $ZFS $BASE $RESTORE $VERSION
-            $BUG_6343779 $NEEDSFD/;
+            $BUG_6343779 $NEEDSFD $DSET/;
 $version_string = '0.1';
 $PREFIX = q^__PREFIX__^;
 $CONF = qq^$PREFIX/etc/zetaback_agent.conf^;
@@ -47,6 +47,7 @@ GetOptions(
   "d=s" => \$SNAP,
   "f=s" => \$FULL,
   "i=s" => \$BASE,
+  "s=s" => \$DSET,
   "b=s" => \$BUG_6343779,
   "v"   => \$VERSION,
 );
@@ -84,6 +85,11 @@ which is provided by the backup server.
 =item -i <timestamp>
 
 Perform an incremental backup.  The name of the backup will include 
+<timestamp>, which is provided by the backup server.
+
+=item -s <timestamp>
+
+Perform a dataset backup.  The name of the backup will include 
 <timestamp>, which is provided by the backup server.
 
 =item -l
@@ -189,7 +195,8 @@ sub zfs_agent_remove_snap {
   my $target = $ZFS . '@';
   die "zfs_agent_remove_snap: insufficient args\n" unless($ZFS && $SNAP);
   if($SNAP eq '__zb_incr' or
-     $SNAP =~ /__zb_full_\d+/) {
+     $SNAP =~ /__zb_full_\d+/ or
+     $SNAP =~ /__zb_dset_\d+/) {
     $target .= $SNAP;
   }
   else {
@@ -218,6 +225,22 @@ sub zfs_agent_perform_incremental {
   my $base = $ZFS . '@__zb_full_' . $BASE;
   unless($ZFS && $BASE) {
     die "zfs_agent_perform_incremental: bad args\n"
+  }
+  `__ZFS__ snapshot $target`;
+  my @cmd = ("__ZFS__", "send", "-i", $base, $target);
+  if($NEEDSFD) {
+    fifo_exec(@cmd);
+  } else {
+    exec { $cmd[0] } @cmd;
+  }
+  exit;
+}
+
+sub zfs_agent_perform_dataset {
+  my $target = $ZFS . '@__zb_dset_' . $DSET;
+  my $base = $ZFS . '@__zb_dset_' . $BASE;
+  unless($ZFS && $DSET && $BASE) {
+    die "zfs_agent_perform_dataset: bad args\n"
   }
   `__ZFS__ snapshot $target`;
   my @cmd = ("__ZFS__", "send", "-i", $base, $target);
@@ -295,6 +318,7 @@ if($ZFS && $SNAP) { zfs_agent_remove_snap(); exit; }
 if($ZFS && $RESTORE) { zfs_agent_perform_restore(); exit; }
 if($ZFS && $FULL) { zfs_agent_perform_full(); exit; }
 if($ZFS && $BASE) { zfs_agent_perform_incremental(); exit; }
+if($ZFS && $DSET) { zfs_agent_perform_dataset(); exit; }
 
 =pod
 
