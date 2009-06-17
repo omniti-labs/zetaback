@@ -580,20 +580,32 @@ sub zfs_do_backup($$$$$$;$) {
       die "error: $?" if($?);
     }
     else {
-      my @cmd = ('ssh', split(/ /, $ssh_config), $host, $agent, '-z', $fs)
-      if ($type eq "i" || $type eq "s") {
-        push @cmd ("-i", $base);
+      my @cmd = ('ssh', split(/ /, $ssh_config), $host, $agent, '-z', $fs);
+      if ($type eq "i" || ($type eq "s" && $base)) {
+        push @cmd, ("-i", $base);
       }
       if ($type eq "f" || $type eq "s") {
-        push @cmd ("-$type", $point);
+        push @cmd, ("-$type", $point);
       }
       open STDIN, "/dev/null" || exit(-1);
       if ($type eq "s") {
-        my $storefs = get_fs_from_mountpoint($store);
-        open STDOUT, "|__ZFS__ recv $storefs/$dumpname"
+        my $storefs;
+        eval {
+            $storefs = get_fs_from_mountpoint($store);
+        };
+        if ($@) {
+            # The zfs filesystem doesn't exist, so we have to work out what it
+            # would be
+            my $basestore = config_get($host, 'store');
+            $basestore =~ s/\/?%h//g;
+            $storefs = get_fs_from_mountpoint($basestore);
+            $storefs="$storefs/$host";
+        }
+        open STDOUT, "|__ZFS__ recv $storefs/$dumpname";
       } else {
         open STDOUT, ">&LBACKUP" || exit(-1);
       }
+      print STDERR "   => @cmd\n" if($DEBUG);
       exec { $cmd[0] } @cmd;
       print STDERR "$cmd[0] failed: $?\n";
       exit($?);
