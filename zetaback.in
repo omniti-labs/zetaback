@@ -601,7 +601,10 @@ sub zfs_do_backup($$$$$$;$) {
             $storefs = get_fs_from_mountpoint($basestore);
             $storefs="$storefs/$host";
         }
-        open STDOUT, "|__ZFS__ recv $storefs/$dumpname";
+        print STDERR "Receiving to zfs filesystem $storefs/$dumpname\n"
+            if($DEBUG);
+        zfs_create_intermediate_filesystems("$storefs/$dumpname");
+        open STDOUT, "|__ZFS__ recv $storefs/$dumpname" || exit(-1)
       } else {
         open STDOUT, ">&LBACKUP" || exit(-1);
       }
@@ -632,6 +635,20 @@ sub zfs_do_backup($$$$$$;$) {
   zetaback_log($host, "SUCCESS[$size] $host:$fs $type\n");
 }
 
+sub zfs_create_intermediate_filesystems($) {
+  my ($fs) = @_;
+  my $idx=0;
+  while (($idx = index($fs, '/', $idx+1)) != -1) {
+      my $fspart = substr($fs, 0, $idx);
+      `__ZFS__ list $fspart 2>&1`;
+      if ($?) {
+        print STDERR "Creating intermediate zfs filesystem: $fspart\n"
+          if $DEBUG;
+        `__ZFS__ create $fspart`;
+      }
+  }
+}
+
 sub zfs_full_backup($$$) {
   my ($host, $fs, $store) = @_;
 
@@ -660,7 +677,7 @@ sub zfs_dataset_backup($$$$) {
   my $agent = config_get($host, 'agent');
 
   my $point = time();
-  my $dumpname = "$host/$fs\@$point";
+  my $dumpname = "$fs\@$point";
 
   zfs_do_backup($host, $fs, 's', $point, $store, $dumpname, $base);
 }

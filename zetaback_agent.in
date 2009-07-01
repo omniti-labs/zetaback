@@ -240,11 +240,18 @@ sub zfs_agent_perform_incremental {
 sub zfs_agent_perform_dataset {
   my $target = $ZFS . '@__zb_dset_' . $DSET;
   my $base = $ZFS . '@__zb_dset_' . $BASE;
-  unless($ZFS && $DSET && $BASE) {
+  unless($ZFS && $DSET) {
     die "zfs_agent_perform_dataset: bad args\n"
   }
   `__ZFS__ snapshot $target`;
-  my @cmd = ("__ZFS__", "send", "-i", $base, $target);
+  # $BASE (the base snapshot) is optional. If provided, send an incremental
+  # snapshot
+  my @cmd;
+  if ($BASE) {
+    @cmd = ("__ZFS__", "send", "-i", $base, $target);
+  } else {
+    @cmd = ("__ZFS__", "send", $target);
+  }
   if($NEEDSFD) {
     fifo_exec(@cmd);
   } else {
@@ -318,7 +325,7 @@ if($LIST) { zfs_agent_list(); exit; }
 if($ZFS && $SNAP) { zfs_agent_remove_snap(); exit; }
 if($ZFS && $RESTORE) { zfs_agent_perform_restore(); exit; }
 if($ZFS && $FULL) { zfs_agent_perform_full(); exit; }
-if($ZFS && $DSET && $BASE) { zfs_agent_perform_dataset(); exit; }
+if($ZFS && $DSET) { zfs_agent_perform_dataset(); exit; }
 if($ZFS && $BASE) { zfs_agent_perform_incremental(); exit; }
 
 =pod
