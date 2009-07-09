@@ -634,9 +634,7 @@ sub zfs_do_backup($$$$$$;$) {
     }
     chomp(my $error = $@);
     $error =~ s/[\r\n]+/ /gsm;
-    # TODO - this isn't being shown - why?
     zetaback_log($host, "FAILED[$error] $host:$fs $type\n");
-    # TODO - run zfs set to set the real filesystem name
     die "zfs_full_backup: failed $@";
   }
   my $size;
@@ -647,7 +645,6 @@ sub zfs_do_backup($$$$$$;$) {
     $size = `__ZFS__ get -Ho value used $storefs/$mungedname`;
     chomp $size;
   }
-  # TODO - this isn't being shown - why?
   zetaback_log($host, "SUCCESS[$size] $host:$fs $type\n");
 }
 
