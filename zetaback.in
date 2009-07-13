@@ -509,14 +509,18 @@ sub scan_for_backups($) {
   return \%info unless $rv;
   while (<ZFSLIST>) {
       my @F = split(' ');
-      my ($fs, $snap) = split('@', $F[0]);
+      my ($rawfs, $snap) = split('@', $F[0]);
       #$fs =~ s/$storefs\/?//;
-      $fs = get_real_fs_name($fs);
+      my $fs = get_real_fs_name($rawfs);
       my ($whence) = ($snap =~ /(\d+)/);
       next unless $whence;
       # Treat a dataset backup as a full backup from the point of view of the
       # backup lists
       $info{$fs}->{full}->{$whence}->{'snapshot'} = $snap;
+      $info{$fs}->{full}->{$whence}->{'dataset'} = "$rawfs\@$snap";
+      # Note - this field isn't set for file backups - we probably should do
+      # this
+      $info{$fs}->{full}->{$whence}->{'pretty_size'} = "$F[1]";
       $info{$fs}->{last_full} = $whence if ($whence >
           $info{$fs}->{last_full});
       $info{$fs}->{last_backup} = $whence if ($whence >
@@ -754,29 +758,39 @@ sub perform_retention($$) {
     my @removals = grep { !exists($must_save{$_}) } @backup_points;
     if($DEBUG) {
       my $tf = config_get($host, 'time_format');
-      print "    => I can remove:\n";
+      print "    => Candidates for removal:\n";
       foreach (@backup_points) {
         print "      => ". strftime($tf, localtime($_));
         print " [". (exists($info->{full}->{$_}) ? "full":"incremental") ."]";
-        print " XXX" if(!exists($must_save{$_}));
+        print " => marked for removal" if(!exists($must_save{$_}));
         print "\n";
       }
     }
     foreach (@removals) {
       my $efs = dir_encode($disk);
       my $filename;
-      if(exists($info->{full}->{$_})) {
-        $filename = "$store/$_.$efs.full";
-      }
-      elsif(exists($info->{incremental}->{$_})) {
-        $filename = "$store/$_.$efs.incremental.$info->{incremental}->{$_}->{depends}";
-      }
-      else {
+      my $dataset;
+      if(exists($info->{full}->{$_}->{file})) {
+        $filename = $info->{full}->{$_}->{file};
+      } elsif(exists($info->{incremental}->{$_}->{file})) {
+        $filename = $info->{full}->{$_}->{file};
+      } elsif(exists($info->{full}->{$_}->{dataset})) {
+        $dataset = $info->{full}->{$_}->{dataset};
+      } elsif(exists($info->{incremental}->{$_}->{dataset})) {
+        $dataset = $info->{incremental}->{$_}->{dataset};
+      } else {
         print "ERROR: We tried to expunge $host $disk [$_], but couldn't find it.\n";
       }
-      print "    => expunging $filename\n" if($DEBUG);
+      print "    => expunging ${filename}${dataset}\n" if($DEBUG);
       unless($NEUTERED) {
-        unlink($filename) || print "ERROR: unlink $filename: $?\n";
+        if ($filename) {
+          unlink($filename) || print "ERROR: unlink $filename: $?\n";
+        } elsif ($dataset) {
+          `__ZFS__ destroy $dataset`;
+          if ($?) {
+            print "ERROR: zfs destroy $dataset: $?\n";
+          }
+        }
       }
     }
   }
@@ -968,9 +982,15 @@ sub pretty_print_backup($$$) {
   my $tf = config_get($host, 'time_format');
   print "\t" . strftime($tf, localtime($point)) . " [$point] ";
   if(exists($info->{full}->{$point})) {
-    my @st = stat($info->{full}->{$point}->{file});
-    print "FULL " . pretty_size($st[7]);
-    print "\n\tfile: $info->{full}->{$point}->{file}" if($SHOW_FILENAMES);
+    if ($info->{full}->{$point}->{file}) {
+      my @st = stat($info->{full}->{$point}->{file});
+      print "FULL " . pretty_size($st[7]);
+      print "\n\tfile: $info->{full}->{$point}->{file}" if($SHOW_FILENAMES);
+    } elsif ($info->{full}->{$point}->{dataset}) {
+      print "FULL $info->{full}->{$point}->{pretty_size}";
+      print "\n\tdataset: $info->{full}->{$point}->{dataset}"
+        if($SHOW_FILENAMES);
+    }
   } else {
     my @st = stat($info->{incremental}->{$point}->{file});
     print "INCR from [$info->{incremental}->{$point}->{depends}] " . pretty_size($st[7]);
