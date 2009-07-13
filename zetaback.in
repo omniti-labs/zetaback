@@ -1130,7 +1130,8 @@ sub plan_and_run($$$) {
       }
       $backup_type = 'full' if($FORCE_FULL);
       $backup_type = 'incremental' if($FORCE_INC);
-      $backup_type = 'dataset' if(config_get($host, 'dataset_backup') eq 1);
+      $backup_type = 'dataset' if(config_get($host, 'dataset_backup') eq 1 &&
+        $backup_type ne 'no');
 
       print " => doing $backup_type backup\n" if($DEBUG);
       # We need to drop a __zb_base snap or a __zb_incr snap before we proceed
