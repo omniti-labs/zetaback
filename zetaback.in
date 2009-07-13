@@ -510,10 +510,9 @@ sub scan_for_backups($) {
   while (<ZFSLIST>) {
       my @F = split(' ');
       my ($rawfs, $snap) = split('@', $F[0]);
-      #$fs =~ s/$storefs\/?//;
-      my $fs = get_real_fs_name($rawfs);
       my ($whence) = ($snap =~ /(\d+)/);
       next unless $whence;
+      my $fs = get_real_fs_name($rawfs);
       # Treat a dataset backup as a full backup from the point of view of the
       # backup lists
       $info{$fs}->{full}->{$whence}->{'snapshot'} = $snap;
@@ -844,7 +843,7 @@ sub backup_chain($$) {
 sub get_fs_from_mountpoint($) {
     my ($mountpoint) = @_;
     my $fs;
-    my $rv = open(ZFSLIST, "__ZFS__ list -H |");
+    my $rv = open(ZFSLIST, "__ZFS__ list -t filesystem -H |");
     die "Unable to determine zfs filesystem for $mountpoint" unless $rv;
     while (<ZFSLIST>) {
         my @F = split(' ');
@@ -1003,7 +1002,7 @@ sub show_backups($$$) {
   my ($host, $store, $diskpat) = @_;
   my $backup_info = scan_for_backups($store);
   my $tf = config_get($host, 'time_format');
-  my @files;
+  my (@files, @datasets);
   foreach my $disk (sort keys %{$backup_info}) {
     my $info = $backup_info->{$disk};
     next unless(ref($info) eq 'HASH');
@@ -1041,24 +1040,56 @@ sub show_backups($$$) {
     }
     foreach (@backup_points) {
       pretty_print_backup($info, $host, $_);
-      push @files, exists($info->{full}->{$_}) ? $info->{full}->{$_}->{file} : $info->{incremental}->{$_}->{file};
+      if(exists($info->{full}->{$_}->{file})) {
+        push @files, $info->{full}->{$_}->{file};
+      } elsif(exists($info->{incremental}->{$_}->{file})) {
+        push @files, $info->{incremental}->{$_}->{file};
+      } elsif(exists($info->{full}->{$_}->{dataset})) {
+        push @datasets, $info->{full}->{$_}->{dataset}
+      }
     }
     print "\n";
   }
-  if($ARCHIVE && scalar(@files)) {
-    my $archive = config_get($host, 'archive');
-    $archive =~ s/%h/$host/g;
-    if(! -d $archive) {
-      mkdir $archive || die "Cannot mkdir($archive)\n";
-    }
-    print "\nAre you sure you would like to archive ".scalar(@files)." file(s)? ";
+  if($ARCHIVE && (scalar(@files) || scalar(@datasets))) {
+    print "\nAre you sure you would like to archive ".scalar(@files).
+      " file(s) and ".scalar(@datasets)." dataset(s)? ";
     while(($_ = <>) !~ /(?:y|n|yes|no)$/i) {
-      print "Are you sure you would like to archive ".scalar(@files)." file(s)? ";
+      print "\nAre you sure you would like to archive ".scalar(@files).
+        " file(s) and ".scalar(@datasets)." dataset(s)? ";
     }
     if(/^y/i) {
-      foreach my $file (@files) {
-        (my $afile = $file) =~ s/^$store/$archive/;
-	move($file, $afile) || print "Error archiving $file: $!\n";
+      if (@files) {
+        my $archive = config_get($host, 'archive');
+        $archive =~ s/%h/$host/g;
+        if(! -d $archive) {
+          mkdir $archive || die "Cannot mkdir($archive)\n";
+        }
+        foreach my $file (@files) {
+          (my $afile = $file) =~ s/^$store/$archive/;
+          move($file, $afile) || print "Error archiving $file: $!\n";
+        }
+      }
+      if (@datasets) {
+        my $archive = config_get($host, 'archive');
+        my $storefs = get_fs_from_mountpoint($store);
+        (my $basearchive = $archive) =~ s/\/?%h//g;
+        my $basearchivefs;
+        eval {
+          $basearchivefs = get_fs_from_mountpoint($basearchive);
+        };
+        die "Unable to find archive filesystem. The archive directory must be the root of a zfs filesystem to archive datasets." if $@;
+        my $archivefs = "$basearchivefs/$host";
+        `__ZFS__ create $archivefs`; # We don't care if this fails
+        my %seen = ();
+        foreach my $dataset (@datasets) {
+          $dataset =~ s/@.*$//; # Only rename filesystems, not snapshots
+          next if $seen{$dataset}++; # Only rename a filesystem once
+          (my $adataset = $dataset) =~ s/^$storefs/$archivefs/;
+          `__ZFS__ rename $dataset $adataset`;
+          if ($?) {
+            print "Error archiving $dataset\n";
+          }
+        }
       }
     }
   }
