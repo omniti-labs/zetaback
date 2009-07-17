@@ -1,0 +1,99 @@
+#!/usr/bin/perl
+# vim: sts=2 sw=2 ts=8 et
+
+# Copyright (c) 2007 OmniTI Computer Consulting, Inc. All rights reserved.
+# For information on licensing see:
+#   https://labs.omniti.com/zetaback/trunk/LICENSE
+
+use strict;
+use warnings;
+use Getopt::Long;
+use MIME::Base64;
+use vars qw/$FS $CONF %conf/;
+
+sub fs_encode($) {
+  my $d = shift;
+  my $e = encode_base64($d, '');
+  $e =~ s/\//_/g;
+  $e =~ s/=/-/g;
+  $e =~ s/\+/\./g;
+  return $e;
+}
+sub fs_decode($) {
+  my $e = shift;
+  $e =~ s/_/\//g;
+  $e =~ s/-/=/g;
+  $e =~ s/\./\+/g;
+  return decode_base64($e);
+}
+
+$CONF = qq^__PREFIX__/etc/zetaback.conf^;
+
+GetOptions (
+  "c=s"   => \$CONF,
+  "f=s"   => \$FS
+);
+
+my $str_re = qr/(?:"(?:\\\\|\\"|[^"])*"|\S+)/;
+my $kvp_re = qr/($str_re)\s*=\s*($str_re)/;
+my $stanza_re = qr/($str_re)\s*\{((?:\s*$kvp_re)*)\s*\}/;
+sub parse_config() {
+  local($/);
+  $/ = undef;
+  open(CONF, "<$CONF") || die "Unable to open config file: $CONF";
+  my $file = <CONF>;
+  # Rip comments
+  $file =~ s/^\s*#.*$//mg;
+  while($file =~ m/$stanza_re/gm) {
+    my $scope = $1;
+    my $filepart = $2;
+    $scope =~ s/^"(.*)"$/$1/;
+    $conf{$scope} ||= {};
+    while($filepart =~ m/$kvp_re/gm) {
+      my $key = $1;
+      my $value = $2;
+      $key =~ s/^"(.*)"$/$1/;
+      $value =~ s/^"(.*)"$/$1/;
+      $conf{$scope}->{lc($key)} = $value;
+    }
+  }
+  close(CONF);
+}
+
+sub get_fs_from_mountpoint($) {
+    my ($mountpoint) = @_;
+    my $fs;
+    my $rv = open(ZFSLIST, "__ZFS__ list -t filesystem -H |");
+    die "Unable to determine zfs filesystem for $mountpoint" unless $rv;
+    while (<ZFSLIST>) {
+        my @F = split(' ');
+        if ($F[-1] eq $mountpoint) {
+            $fs = $F[0];
+            last;
+        }
+    }
+    close(ZFSLIST);
+    die "Unable to determine zfs filesystem for $mountpoint" unless $fs;
+    return $fs;
+}
+
+unless ($FS) {
+    parse_config;
+    $FS = $conf{'default'}->{'store'};
+    $FS =~ s/\/?%h//;
+    $FS = get_fs_from_mountpoint($FS);
+}
+
+print "Decoding filesystems for $FS\n";
+my $rv = open(ZFSLIST, "__ZFS__ list -H -r -t snapshot $FS |");
+while (<ZFSLIST>) {
+    my @parts = split();
+    my $efs = $parts[0];
+    $efs =~ s/.*\///g;
+    $efs =~ s/@.*$//;
+    #print "$efs\n";
+    my $dfs = fs_decode($efs);
+    if ($dfs) {
+        print "$dfs\n    $efs\n\n";
+    }
+}

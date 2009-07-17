@@ -421,6 +421,25 @@ sub config_get($$) {
   return $conf{$_[0]}->{$_[1]} || $conf{'default'}->{$_[1]};
 }
 
+sub fs_encode($) {
+  my $d = shift;
+  my @parts = split('@', $d);
+  my $e = encode_base64($parts[0], '');
+  $e =~ s/\//_/g;
+  $e =~ s/=/-/g;
+  $e =~ s/\+/\./g;
+  if (exists $parts[1]) {
+    $e .= "\@$parts[1]";
+  }
+  return $e;
+}
+sub fs_decode($) {
+  my $e = shift;
+  $e =~ s/_/\//g;
+  $e =~ s/-/=/g;
+  $e =~ s/\./\+/g;
+  return decode_base64($e);
+}
 sub dir_encode($) {
   my $d = shift;
   my $e = encode_base64($d, '');
@@ -512,7 +531,8 @@ sub scan_for_backups($) {
       my ($rawfs, $snap) = split('@', $F[0]);
       my ($whence) = ($snap =~ /(\d+)/);
       next unless $whence;
-      my $fs = get_real_fs_name($rawfs);
+      my @fsparts = split('/', $rawfs);
+      my $fs = fs_decode($fsparts[-1]);
       # Treat a dataset backup as a full backup from the point of view of the
       # backup lists
       $info{$fs}->{full}->{$whence}->{'snapshot'} = $snap;
@@ -526,7 +546,6 @@ sub scan_for_backups($) {
           $info{$fs}->{last_backup});
   }
   close(ZFSLIST);
-  die "Unable to determine zfs filesystem for $dir" unless $storefs;
 
   return \%info;
 }
@@ -560,7 +579,7 @@ sub zfs_remove_snap($$$) {
 # Lots of args.. internally called.
 sub zfs_do_backup($$$$$$;$) {
   my ($host, $fs, $type, $point, $store, $dumpname, $base) = @_;
-  my ($storefs, $mungedname);
+  my ($storefs, $encodedname);
   my $agent = config_get($host, 'agent');
   my $ssh_config = config_get($host, 'ssh_config');
   $ssh_config = "-F $ssh_config" if($ssh_config);
@@ -589,11 +608,11 @@ sub zfs_do_backup($$$$$$;$) {
       $storefs = get_fs_from_mountpoint($basestore);
       $storefs="$storefs/$host";
     }
-    $mungedname = munge_fs_name($dumpname);
-    print STDERR "Receiving to zfs filesystem $storefs/$mungedname\n"
+    $encodedname = fs_encode($dumpname);
+    print STDERR "Receiving to zfs filesystem $storefs/$encodedname\n"
       if($DEBUG);
-    zfs_create_intermediate_filesystems("$storefs/$mungedname");
-    open(LBACKUP, "|__ZFS__ recv $storefs/$mungedname");
+    zfs_create_intermediate_filesystems("$storefs/$encodedname");
+    open(LBACKUP, "|__ZFS__ recv $storefs/$encodedname");
   }
   # Do it. yeah.
   eval {
@@ -621,13 +640,9 @@ sub zfs_do_backup($$$$$$;$) {
       die "dump failed (zero bytes)\n" if(-z "$store/.$dumpname");
       rename("$store/.$dumpname", "$store/$dumpname") || die "cannot rename dump\n";
     } else {
-      # Set the real filesystem name as a zfs property
-      my $fsname = (split('@', $dumpname))[0];
-      my $mungedfs = (split('@', $mungedname))[0];
-      `__ZFS__ set com.omniti.labs.zetaback:fsname=$fsname $storefs/$mungedfs`;
       # Check everything is ok
-      `__ZFS__ list $storefs/$mungedname`;
-      die "dump failed (received snapshot $storefs/$mungedname does not exist)\n"
+      `__ZFS__ list $storefs/$encodedname`;
+      die "dump failed (received snapshot $storefs/$encodedname does not exist)\n"
         if $?;
     }
   };
@@ -645,7 +660,7 @@ sub zfs_do_backup($$$$$$;$) {
     my @st = stat("$store/$dumpname");
     $size = pretty_size($st[7]);
   } else {
-    $size = `__ZFS__ get -Ho value used $storefs/$mungedname`;
+    $size = `__ZFS__ get -Ho value used $storefs/$encodedname`;
     chomp $size;
   }
   zetaback_log($host, "SUCCESS[$size] $host:$fs $type\n");
@@ -663,24 +678,6 @@ sub zfs_create_intermediate_filesystems($) {
         `__ZFS__ create $fspart`;
       }
   }
-}
-
-sub munge_fs_name($) {
-  # Removes slashes from a filesystem name, while ensuring every filesystem
-  # name results in a unique munged name (you can't have consecutive slashes
-  # in a filesystem name). This operation is not reversible.
-  my ($fs) = @_;
-  $fs =~ s/_/__/g;
-  $fs =~ s/\//_/g;
-  return $fs;
-}
-
-sub get_real_fs_name($) {
-  my ($fs) = @_;
-  # Get's a real fs name from a munged one - requires that the real fs name is
-  # stored as a user property
-  return (
-    split(/\s+/,`__ZFS__ get -H com.omniti.labs.zetaback:fsname $fs`))[2];
 }
 
 sub zfs_full_backup($$$) {
