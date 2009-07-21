@@ -934,12 +934,16 @@ sub perform_restore() {
   print "\n";
 
   foreach(@backup_list) {
-    $_->{success} = zfs_restore_part($RESTORE_HOST, $RESTORE_ZFS, $_->{file}, $_->{depends});
+    $_->{success} = zfs_restore_part($RESTORE_HOST, $RESTORE_ZFS, $_->{file}, $_->{dataset}, $_->{depends});
   }
 }
 
-sub zfs_restore_part($$$;$) {
-  my ($host, $fs, $file, $dep) = @_;
+sub zfs_restore_part($$$$;$) {
+  my ($host, $fs, $file, $dataset, $dep) = @_;
+  unless ($file || $dataset) {
+    print STDERR "=> No dataset or filename given to restore. Bailing out.";
+    return 1;
+  }
   my $ssh_config = config_get($host, 'ssh_config');
   $ssh_config = "-F $ssh_config" if($ssh_config);
   print "Using custom ssh config file: $ssh_config\n" if($DEBUG);
@@ -952,12 +956,19 @@ sub zfs_restore_part($$$;$) {
   else {
     $command = "__ZFS__ recv $fs";
   }
-  print " => piping $file to $command\n" if($DEBUG);
-  if($NEUTERED) {
-    print "gzip -dfc $file | ssh $ssh_config $host $command\n" if ($DEBUG);
+  if ($file) {
+    print " => piping $file to $command\n" if($DEBUG);
+    print "gzip -dfc $file | ssh $ssh_config $host $command\n" if ($DEBUG && $NEUTERED);
+  } elsif ($dataset) {
+    print " => piping $dataset to $command using zfs send\n" if ($DEBUG);
+    print "zfs send $dataset | ssh $ssh_config $host $command\n" if ($DEBUG && $NEUTERED);
   }
-  else {
-    open(DUMP, "gzip -dfc $file |");
+  unless($NEUTERED) {
+    if ($file) {
+      open(DUMP, "gzip -dfc $file |");
+    } elsif ($dataset) {
+      open(DUMP, "__ZFS__ send $dataset |");
+    }
     eval {
       open(RECEIVER, "| ssh $ssh_config $host $command");
       my $buffer;
