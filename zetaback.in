@@ -1,4 +1,5 @@
 #!/usr/bin/perl
+# vim: sts=2 sw=2 ts=8 et
 
 # Copyright (c) 2007 OmniTI Computer Consulting, Inc. All rights reserved.
 # For information on licensing see:
@@ -29,6 +30,7 @@ $BLOCKSIZE = 1024*64;
 $conf{'default'}->{'time_format'} = "%Y-%m-%d %H:%M:%S";
 $conf{'default'}->{'retention'} = 14 * 86400;
 $conf{'default'}->{'compressionlevel'} = 1;
+$conf{'default'}->{'dataset_backup'} = 0;
 
 =pod
 
@@ -335,6 +337,11 @@ Full path to an alternate ssh client config.  This is useful for specifying a
 less secure but faster cipher for some hosts, or using a different private 
 key.  There is no default for this setting.
 
+=item dataset_backup
+
+By default zetaback backs zfs filesystems up to files. This option lets you
+specify that the backup go be stored as a zfs dataset on the backup host.
+
 =back
 
 =head1 CONFIGURATION EXAMPLES
@@ -414,6 +421,25 @@ sub config_get($$) {
   return $conf{$_[0]}->{$_[1]} || $conf{'default'}->{$_[1]};
 }
 
+sub fs_encode($) {
+  my $d = shift;
+  my @parts = split('@', $d);
+  my $e = encode_base64($parts[0], '');
+  $e =~ s/\//_/g;
+  $e =~ s/=/-/g;
+  $e =~ s/\+/\./g;
+  if (exists $parts[1]) {
+    $e .= "\@$parts[1]";
+  }
+  return $e;
+}
+sub fs_decode($) {
+  my $e = shift;
+  $e =~ s/_/\//g;
+  $e =~ s/-/=/g;
+  $e =~ s/\./\+/g;
+  return decode_base64($e);
+}
 sub dir_encode($) {
   my $d = shift;
   my $e = encode_base64($d, '');
@@ -470,6 +496,7 @@ sub scan_for_backups($) {
   my %info = ();
   my $dir = shift;
   $info{last_full} = $info{last_incremental} = $info{last_backup} = 0;
+  # Look for standard file based backups first
   opendir(D, $dir) || return \%info;
   foreach my $file (readdir(D)) {
     if($file =~ /^(\d+)\.([^\.]+)\.full$/) {
@@ -491,6 +518,35 @@ sub scan_for_backups($) {
     }
   }
   closedir(D);
+  # Now look for zfs based backups
+  my $storefs;
+  eval {
+    $storefs = get_fs_from_mountpoint($dir);
+  };
+  return \%info if ($@);
+  my $rv = open(ZFSLIST, "__ZFS__ list -H -r -t snapshot $storefs |");
+  return \%info unless $rv;
+  while (<ZFSLIST>) {
+      my @F = split(' ');
+      my ($rawfs, $snap) = split('@', $F[0]);
+      my ($whence) = ($snap =~ /(\d+)/);
+      next unless $whence;
+      my @fsparts = split('/', $rawfs);
+      my $fs = fs_decode($fsparts[-1]);
+      # Treat a dataset backup as a full backup from the point of view of the
+      # backup lists
+      $info{$fs}->{full}->{$whence}->{'snapshot'} = $snap;
+      $info{$fs}->{full}->{$whence}->{'dataset'} = "$rawfs\@$snap";
+      # Note - this field isn't set for file backups - we probably should do
+      # this
+      $info{$fs}->{full}->{$whence}->{'pretty_size'} = "$F[1]";
+      $info{$fs}->{last_full} = $whence if ($whence >
+          $info{$fs}->{last_full});
+      $info{$fs}->{last_backup} = $whence if ($whence >
+          $info{$fs}->{last_backup});
+  }
+  close(ZFSLIST);
+
   return \%info;
 }
 
@@ -521,22 +577,44 @@ sub zfs_remove_snap($$$) {
 }
 
 # Lots of args.. internally called.
-sub zfs_do_backup($$$$$$) {
-  my ($host, $fs, $type, $point, $store, $dumpfile) = @_;
+sub zfs_do_backup($$$$$$;$) {
+  my ($host, $fs, $type, $point, $store, $dumpname, $base) = @_;
+  my ($storefs, $encodedname);
   my $agent = config_get($host, 'agent');
   my $ssh_config = config_get($host, 'ssh_config');
   $ssh_config = "-F $ssh_config" if($ssh_config);
   print "Using custom ssh config file: $ssh_config\n" if($DEBUG);
 
-  # Do it. yeah.
-  my $cl = config_get($host, 'compressionlevel');
-  if ($cl >= 1 && $cl <= 9) {
-    open(LBACKUP, "|gzip -$cl >$store/.$dumpfile") ||
-      die "zfs_full_backup: cannot create dump\n";
+  # compression is meaningless for dataset backups
+  if ($type ne "s") {
+    my $cl = config_get($host, 'compressionlevel');
+    if ($cl >= 1 && $cl <= 9) {
+        open(LBACKUP, "|gzip -$cl >$store/.$dumpname") ||
+        die "zfs_full_backup: cannot create dump\n";
+    } else {
+        open(LBACKUP, ">$store/.$dumpname") ||
+        die "zfs_full_backup: cannot create dump\n";
+    }
   } else {
-    open(LBACKUP, ">$store/.$dumpfile") ||
-      die "zfs_full_backup: cannot create dump\n";
+    # Dataset backup - pipe received filesystem to zfs recv
+    eval {
+      $storefs = get_fs_from_mountpoint($store);
+    };
+    if ($@) {
+      # The zfs filesystem doesn't exist, so we have to work out what it
+      # would be
+      my $basestore = config_get($host, 'store');
+      $basestore =~ s/\/?%h//g;
+      $storefs = get_fs_from_mountpoint($basestore);
+      $storefs="$storefs/$host";
+    }
+    $encodedname = fs_encode($dumpname);
+    print STDERR "Receiving to zfs filesystem $storefs/$encodedname\n"
+      if($DEBUG);
+    zfs_create_intermediate_filesystems("$storefs/$encodedname");
+    open(LBACKUP, "|__ZFS__ recv $storefs/$encodedname");
   }
+  # Do it. yeah.
   eval {
     if(my $pid = fork()) {
       close(LBACKUP);
@@ -544,49 +622,95 @@ sub zfs_do_backup($$$$$$) {
       die "error: $?" if($?);
     }
     else {
-      my @cmd = ('ssh', split(/ /, $ssh_config), $host, $agent, '-z', $fs, "-$type", $point);
+      my @cmd = ('ssh', split(/ /, $ssh_config), $host, $agent, '-z', $fs);
+      if ($type eq "i" || ($type eq "s" && $base)) {
+        push @cmd, ("-i", $base);
+      }
+      if ($type eq "f" || $type eq "s") {
+        push @cmd, ("-$type", $point);
+      }
       open STDIN, "/dev/null" || exit(-1);
       open STDOUT, ">&LBACKUP" || exit(-1);
+      print STDERR "   => @cmd\n" if($DEBUG);
       exec { $cmd[0] } @cmd;
       print STDERR "$cmd[0] failed: $?\n";
       exit($?);
     }
-    die "dump failed (zero bytes)\n" if(-z "$store/.$dumpfile");
-    rename("$store/.$dumpfile", "$store/$dumpfile") || die "cannot rename dump\n";
+    if ($type ne "s") {
+      die "dump failed (zero bytes)\n" if(-z "$store/.$dumpname");
+      rename("$store/.$dumpname", "$store/$dumpname") || die "cannot rename dump\n";
+    } else {
+      # Check everything is ok
+      `__ZFS__ list $storefs/$encodedname`;
+      die "dump failed (received snapshot $storefs/$encodedname does not exist)\n"
+        if $?;
+    }
   };
   if($@) {
-    unlink("$store/.$dumpfile");
+    if ($type ne "s") {
+        unlink("$store/.$dumpname");
+    }
     chomp(my $error = $@);
     $error =~ s/[\r\n]+/ /gsm;
     zetaback_log($host, "FAILED[$error] $host:$fs $type\n");
     die "zfs_full_backup: failed $@";
   }
-  my @st = stat("$store/$dumpfile");
-  my $size = pretty_size($st[7]);
+  my $size;
+  if ($type ne "s") {
+    my @st = stat("$store/$dumpname");
+    $size = pretty_size($st[7]);
+  } else {
+    $size = `__ZFS__ get -Ho value used $storefs/$encodedname`;
+    chomp $size;
+  }
   zetaback_log($host, "SUCCESS[$size] $host:$fs $type\n");
+}
+
+sub zfs_create_intermediate_filesystems($) {
+  my ($fs) = @_;
+  my $idx=0;
+  while (($idx = index($fs, '/', $idx+1)) != -1) {
+      my $fspart = substr($fs, 0, $idx);
+      `__ZFS__ list $fspart 2>&1`;
+      if ($?) {
+        print STDERR "Creating intermediate zfs filesystem: $fspart\n"
+          if $DEBUG;
+        `__ZFS__ create $fspart`;
+      }
+  }
 }
 
 sub zfs_full_backup($$$) {
   my ($host, $fs, $store) = @_;
 
-  # Translate into a proper dumpfile nameA
+  # Translate into a proper dumpname
   my $point = time();
   my $efs = dir_encode($fs);
-  my $dumpfile = "$point.$efs.full";
+  my $dumpname = "$point.$efs.full";
 
-  zfs_do_backup($host, $fs, 'f', $point, $store, $dumpfile);
+  zfs_do_backup($host, $fs, 'f', $point, $store, $dumpname);
 }
 
 sub zfs_incremental_backup($$$$) {
   my ($host, $fs, $base, $store) = @_;
   my $agent = config_get($host, 'agent');
 
-  # Translate into a proper dumpfile nameA
+  # Translate into a proper dumpname
   my $point = time();
   my $efs = dir_encode($fs);
-  my $dumpfile = "$point.$efs.incremental.$base";
+  my $dumpname = "$point.$efs.incremental.$base";
 
-  zfs_do_backup($host, $fs, 'i', $base, $store, $dumpfile);
+  zfs_do_backup($host, $fs, 'i', $point, $store, $dumpname, $base);
+}
+
+sub zfs_dataset_backup($$$$) {
+  my ($host, $fs, $base, $store) = @_;
+  my $agent = config_get($host, 'agent');
+
+  my $point = time();
+  my $dumpname = "$fs\@$point";
+
+  zfs_do_backup($host, $fs, 's', $point, $store, $dumpname, $base);
 }
 
 sub perform_retention($$) {
@@ -630,29 +754,39 @@ sub perform_retention($$) {
     my @removals = grep { !exists($must_save{$_}) } @backup_points;
     if($DEBUG) {
       my $tf = config_get($host, 'time_format');
-      print "    => I can remove:\n";
+      print "    => Candidates for removal:\n";
       foreach (@backup_points) {
         print "      => ". strftime($tf, localtime($_));
         print " [". (exists($info->{full}->{$_}) ? "full":"incremental") ."]";
-        print " XXX" if(!exists($must_save{$_}));
+        print " => marked for removal" if(!exists($must_save{$_}));
         print "\n";
       }
     }
     foreach (@removals) {
       my $efs = dir_encode($disk);
       my $filename;
-      if(exists($info->{full}->{$_})) {
-        $filename = "$store/$_.$efs.full";
-      }
-      elsif(exists($info->{incremental}->{$_})) {
-        $filename = "$store/$_.$efs.incremental.$info->{incremental}->{$_}->{depends}";
-      }
-      else {
+      my $dataset;
+      if(exists($info->{full}->{$_}->{file})) {
+        $filename = $info->{full}->{$_}->{file};
+      } elsif(exists($info->{incremental}->{$_}->{file})) {
+        $filename = $info->{full}->{$_}->{file};
+      } elsif(exists($info->{full}->{$_}->{dataset})) {
+        $dataset = $info->{full}->{$_}->{dataset};
+      } elsif(exists($info->{incremental}->{$_}->{dataset})) {
+        $dataset = $info->{incremental}->{$_}->{dataset};
+      } else {
         print "ERROR: We tried to expunge $host $disk [$_], but couldn't find it.\n";
       }
-      print "    => expunging $filename\n" if($DEBUG);
+      print "    => expunging ${filename}${dataset}\n" if($DEBUG);
       unless($NEUTERED) {
-        unlink($filename) || print "ERROR: unlink $filename: $?\n";
+        if ($filename) {
+          unlink($filename) || print "ERROR: unlink $filename: $?\n";
+        } elsif ($dataset) {
+          `__ZFS__ destroy $dataset`;
+          if ($?) {
+            print "ERROR: zfs destroy $dataset: $?\n";
+          }
+        }
       }
     }
   }
@@ -701,6 +835,23 @@ sub backup_chain($$) {
     push @list, backup_chain($info, $info->{incremental}->{$ts}->{depends});
   }
   return @list;
+}
+
+sub get_fs_from_mountpoint($) {
+    my ($mountpoint) = @_;
+    my $fs;
+    my $rv = open(ZFSLIST, "__ZFS__ list -t filesystem -H |");
+    die "Unable to determine zfs filesystem for $mountpoint" unless $rv;
+    while (<ZFSLIST>) {
+        my @F = split(' ');
+        if ($F[-1] eq $mountpoint) {
+            $fs = $F[0];
+            last;
+        }
+    }
+    close(ZFSLIST);
+    die "Unable to determine zfs filesystem for $mountpoint" unless $fs;
+    return $fs;
 }
 
 sub perform_restore() {
@@ -783,12 +934,16 @@ sub perform_restore() {
   print "\n";
 
   foreach(@backup_list) {
-    $_->{success} = zfs_restore_part($RESTORE_HOST, $RESTORE_ZFS, $_->{file}, $_->{depends});
+    $_->{success} = zfs_restore_part($RESTORE_HOST, $RESTORE_ZFS, $_->{file}, $_->{dataset}, $_->{depends});
   }
 }
 
-sub zfs_restore_part($$$;$) {
-  my ($host, $fs, $file, $dep) = @_;
+sub zfs_restore_part($$$$;$) {
+  my ($host, $fs, $file, $dataset, $dep) = @_;
+  unless ($file || $dataset) {
+    print STDERR "=> No dataset or filename given to restore. Bailing out.";
+    return 1;
+  }
   my $ssh_config = config_get($host, 'ssh_config');
   $ssh_config = "-F $ssh_config" if($ssh_config);
   print "Using custom ssh config file: $ssh_config\n" if($DEBUG);
@@ -801,12 +956,19 @@ sub zfs_restore_part($$$;$) {
   else {
     $command = "__ZFS__ recv $fs";
   }
-  print " => piping $file to $command\n" if($DEBUG);
-  if($NEUTERED) {
-    print "gzip -dfc $file | ssh $ssh_config $host $command\n" if ($DEBUG);
+  if ($file) {
+    print " => piping $file to $command\n" if($DEBUG);
+    print "gzip -dfc $file | ssh $ssh_config $host $command\n" if ($DEBUG && $NEUTERED);
+  } elsif ($dataset) {
+    print " => piping $dataset to $command using zfs send\n" if ($DEBUG);
+    print "zfs send $dataset | ssh $ssh_config $host $command\n" if ($DEBUG && $NEUTERED);
   }
-  else {
-    open(DUMP, "gzip -dfc $file |");
+  unless($NEUTERED) {
+    if ($file) {
+      open(DUMP, "gzip -dfc $file |");
+    } elsif ($dataset) {
+      open(DUMP, "__ZFS__ send $dataset |");
+    }
     eval {
       open(RECEIVER, "| ssh $ssh_config $host $command");
       my $buffer;
@@ -827,9 +989,15 @@ sub pretty_print_backup($$$) {
   my $tf = config_get($host, 'time_format');
   print "\t" . strftime($tf, localtime($point)) . " [$point] ";
   if(exists($info->{full}->{$point})) {
-    my @st = stat($info->{full}->{$point}->{file});
-    print "FULL " . pretty_size($st[7]);
-    print "\n\tfile: $info->{full}->{$point}->{file}" if($SHOW_FILENAMES);
+    if ($info->{full}->{$point}->{file}) {
+      my @st = stat($info->{full}->{$point}->{file});
+      print "FULL " . pretty_size($st[7]);
+      print "\n\tfile: $info->{full}->{$point}->{file}" if($SHOW_FILENAMES);
+    } elsif ($info->{full}->{$point}->{dataset}) {
+      print "FULL $info->{full}->{$point}->{pretty_size}";
+      print "\n\tdataset: $info->{full}->{$point}->{dataset}"
+        if($SHOW_FILENAMES);
+    }
   } else {
     my @st = stat($info->{incremental}->{$point}->{file});
     print "INCR from [$info->{incremental}->{$point}->{depends}] " . pretty_size($st[7]);
@@ -842,7 +1010,7 @@ sub show_backups($$$) {
   my ($host, $store, $diskpat) = @_;
   my $backup_info = scan_for_backups($store);
   my $tf = config_get($host, 'time_format');
-  my @files;
+  my (@files, @datasets);
   foreach my $disk (sort keys %{$backup_info}) {
     my $info = $backup_info->{$disk};
     next unless(ref($info) eq 'HASH');
@@ -880,24 +1048,56 @@ sub show_backups($$$) {
     }
     foreach (@backup_points) {
       pretty_print_backup($info, $host, $_);
-      push @files, exists($info->{full}->{$_}) ? $info->{full}->{$_}->{file} : $info->{incremental}->{$_}->{file};
+      if(exists($info->{full}->{$_}->{file})) {
+        push @files, $info->{full}->{$_}->{file};
+      } elsif(exists($info->{incremental}->{$_}->{file})) {
+        push @files, $info->{incremental}->{$_}->{file};
+      } elsif(exists($info->{full}->{$_}->{dataset})) {
+        push @datasets, $info->{full}->{$_}->{dataset}
+      }
     }
     print "\n";
   }
-  if($ARCHIVE && scalar(@files)) {
-    my $archive = config_get($host, 'archive');
-    $archive =~ s/%h/$host/g;
-    if(! -d $archive) {
-      mkdir $archive || die "Cannot mkdir($archive)\n";
-    }
-    print "\nAre you sure you would like to archive ".scalar(@files)." file(s)? ";
+  if($ARCHIVE && (scalar(@files) || scalar(@datasets))) {
+    print "\nAre you sure you would like to archive ".scalar(@files).
+      " file(s) and ".scalar(@datasets)." dataset(s)? ";
     while(($_ = <>) !~ /(?:y|n|yes|no)$/i) {
-      print "Are you sure you would like to archive ".scalar(@files)." file(s)? ";
+      print "\nAre you sure you would like to archive ".scalar(@files).
+        " file(s) and ".scalar(@datasets)." dataset(s)? ";
     }
     if(/^y/i) {
-      foreach my $file (@files) {
-        (my $afile = $file) =~ s/^$store/$archive/;
-	move($file, $afile) || print "Error archiving $file: $!\n";
+      if (@files) {
+        my $archive = config_get($host, 'archive');
+        $archive =~ s/%h/$host/g;
+        if(! -d $archive) {
+          mkdir $archive || die "Cannot mkdir($archive)\n";
+        }
+        foreach my $file (@files) {
+          (my $afile = $file) =~ s/^$store/$archive/;
+          move($file, $afile) || print "Error archiving $file: $!\n";
+        }
+      }
+      if (@datasets) {
+        my $archive = config_get($host, 'archive');
+        my $storefs = get_fs_from_mountpoint($store);
+        (my $basearchive = $archive) =~ s/\/?%h//g;
+        my $basearchivefs;
+        eval {
+          $basearchivefs = get_fs_from_mountpoint($basearchive);
+        };
+        die "Unable to find archive filesystem. The archive directory must be the root of a zfs filesystem to archive datasets." if $@;
+        my $archivefs = "$basearchivefs/$host";
+        `__ZFS__ create $archivefs`; # We don't care if this fails
+        my %seen = ();
+        foreach my $dataset (@datasets) {
+          $dataset =~ s/@.*$//; # Only rename filesystems, not snapshots
+          next if $seen{$dataset}++; # Only rename a filesystem once
+          (my $adataset = $dataset) =~ s/^$storefs/$archivefs/;
+          `__ZFS__ rename $dataset $adataset`;
+          if ($?) {
+            print "Error archiving $dataset\n";
+          }
+        }
       }
     }
   }
@@ -917,6 +1117,8 @@ sub plan_and_run($$$) {
 
     # We need a lock for the listing.
     return unless(lock($host, ".list"));
+
+    # Get list of zfs filesystems from the agent
     open(SILENT, ">&", \*STDERR);
     close(STDERR);
     my $rv = open(ZFSLIST, "ssh $ssh_config $host $agent -l |");
@@ -956,7 +1158,6 @@ sub plan_and_run($$$) {
       if(time() > $backup_info->{last_full} + config_get($host, 'full_interval')) {
         $backup_type = 'full';
       }
-  
       # If we want an incremental, but have no full, then we need to upgrade to full
       if($backup_type eq 'incremental') {
         my $have_full_locally = 0;
@@ -968,6 +1169,8 @@ sub plan_and_run($$$) {
       }
       $backup_type = 'full' if($FORCE_FULL);
       $backup_type = 'incremental' if($FORCE_INC);
+      $backup_type = 'dataset' if(config_get($host, 'dataset_backup') eq 1 &&
+        $backup_type ne 'no');
 
       print " => doing $backup_type backup\n" if($DEBUG);
       # We need to drop a __zb_base snap or a __zb_incr snap before we proceed
@@ -1004,6 +1207,21 @@ sub plan_and_run($$$) {
           else { 
             $took_action = 1;
           }
+        }
+        if($backup_type eq 'dataset') {
+          my @backups = sort { $b <=> $a } (keys %{$backup_info->{'full'}});
+          eval { zfs_dataset_backup($host, $diskname, $backups[0], $store); };
+          if ($@) {
+            chomp(my $err = $@);
+            print " => failure $err\n";
+          }
+          else {
+            # Unless there was an error backing up, remove all the other dset snaps
+            foreach (keys %snaps) {
+              zfs_remove_snap($host, $diskname, $_) if(/^__zb_dset_(\d+)/) 
+            }
+          }
+          $took_action = 1;
         }
         unlock($host, dir_encode($diskname), 1);
       }
