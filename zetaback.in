@@ -719,10 +719,18 @@ sub perform_retention($$) {
   my $retention = config_get($host, 'retention');
   my $now = time();
 
+  if ($DEBUG) {
+    print "Performing retention for $host\n";
+  }
+
   foreach my $disk (sort keys %{$backup_info}) {
     my $info = $backup_info->{$disk};
     next unless(ref($info) eq 'HASH');
     my %must_save;
+
+    if ($DEBUG) {
+      print "   $disk\n";
+    }
 
     # Get a list of all the full and incrementals, sorts newest to oldest
     my @backup_points = (keys %{$info->{full}}, keys %{$info->{incremental}});
@@ -764,25 +772,25 @@ sub perform_retention($$) {
     foreach (keys(%backup_bins)) {
       my $keep = $parts{$_}; # How many backups to keep
       if (!$keep) { next; }  # Don't keep any backups if none specified
-      my @backups = @{$backup_bins{$_}};
-      my $total = @backups;  # How many backups we have
-      print "$keep, $total, $_\n";
-      # If we have less backups than we should keep, keep them all
-      if ($total < $keep) { $keep = $total };
-      for (my $i = 1; $i <= $keep; $i++) {
-        my $idx = int(($i * $total) / $keep) - 1;
-        print "$idx\n";
-        $must_save{$backups[$idx]} = 1;
+      if ($backup_bins{$_}) {
+        my @backups = @{$backup_bins{$_}};
+        my $total = @backups;  # How many backups we have
+        # If we have less backups than we should keep, keep them all
+        if ($total < $keep) { $keep = $total };
+        for (my $i = 1; $i <= $keep; $i++) {
+          my $idx = int(($i * $total) / $keep) - 1;
+          $must_save{$backups[$idx]} = 1;
+        }
       }
     }
     if ($DEBUG) {
-      print "Backup bins - keep the following backups:\n";
+      print "    => Backup bins (keep):\n";
       foreach my $a (keys(%backup_bins)) {
-        print "    => $a\n";
+        print "      => $a\n";
         foreach my $i (@{$backup_bins{$a}}) {
           if (!exists($must_save{$i})) { next; };
           my $trans = $now - $i;
-          print "        => $i ($trans seconds old)\n";
+          print "         => $i ($trans seconds old)\n";
         }
       }
     }
@@ -791,15 +799,19 @@ sub perform_retention($$) {
     foreach (@backup_points) {
       if(exists($info->{incremental}->{$_})) {
         print "   => $_ depends on $info->{incremental}->{$_}->{depends}\n" if($DEBUG);
-        $must_save{$info->{incremental}->{$_}->{depends}} = 1
+        if (exists($must_save{$_})) {
+          $must_save{$info->{incremental}->{$_}->{depends}} = 1
+        }
       }
     }
+
     my @removals = grep { !exists($must_save{$_}) } @backup_points;
     if($DEBUG) {
       my $tf = config_get($host, 'time_format');
       print "    => Candidates for removal:\n";
       foreach (@backup_points) {
         print "      => ". strftime($tf, localtime($_));
+        print " ($_)";
         print " [". (exists($info->{full}->{$_}) ? "full":"incremental") ."]";
         print " => marked for removal" if(!exists($must_save{$_}));
         print "\n";
@@ -812,7 +824,7 @@ sub perform_retention($$) {
       if(exists($info->{full}->{$_}->{file})) {
         $filename = $info->{full}->{$_}->{file};
       } elsif(exists($info->{incremental}->{$_}->{file})) {
-        $filename = $info->{full}->{$_}->{file};
+        $filename = $info->{incremental}->{$_}->{file};
       } elsif(exists($info->{full}->{$_}->{dataset})) {
         $dataset = $info->{full}->{$_}->{dataset};
       } elsif(exists($info->{incremental}->{$_}->{dataset})) {
