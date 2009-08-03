@@ -738,9 +738,9 @@ sub perform_retention($$) {
 
     # We _cannot_ throw away _all_ our backups,
     # so save the most recent incremental and full no matter what
-    $must_save{$backup_points[0]} = 1;
+    push(@{$must_save{$backup_points[0]}}, "most recent backup");
     my @fulls = grep { exists($info->{full}->{$_}) } @backup_points;
-    $must_save{$fulls[0]} = 1;
+    push(@{$must_save{$fulls[0]}}, "most recent full");
 
     # Process retention policy
     my %parts = split(/[;,]/, $retention);
@@ -779,7 +779,7 @@ sub perform_retention($$) {
         if ($total < $keep) { $keep = $total };
         for (my $i = 1; $i <= $keep; $i++) {
           my $idx = int(($i * $total) / $keep) - 1;
-          $must_save{$backups[$idx]} = 1;
+          push(@{$must_save{$backups[$idx]}}, "retention policy");
         }
       }
     }
@@ -800,7 +800,8 @@ sub perform_retention($$) {
       if(exists($info->{incremental}->{$_})) {
         print "   => $_ depends on $info->{incremental}->{$_}->{depends}\n" if($DEBUG);
         if (exists($must_save{$_})) {
-          $must_save{$info->{incremental}->{$_}->{depends}} = 1
+          push(@{$must_save{$info->{incremental}->{$_}->{depends}}},
+            "dependency");
         }
       }
     }
@@ -813,7 +814,12 @@ sub perform_retention($$) {
         print "      => ". strftime($tf, localtime($_));
         print " ($_)";
         print " [". (exists($info->{full}->{$_}) ? "full":"incremental") ."]";
-        print " => marked for removal" if(!exists($must_save{$_}));
+        if (exists($must_save{$_})) {
+          my $reason = join(", ", @{$must_save{$_}});
+          print " => keep ($reason)";
+        } else {
+          print " => remove";
+        }
         print "\n";
       }
     }
