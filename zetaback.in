@@ -715,9 +715,10 @@ sub zfs_dataset_backup($$$$) {
 
 sub perform_retention($$) {
   my ($host, $store) = @_;
-  my $cutoff = time() - config_get($host, 'retention');
   my $backup_info = scan_for_backups($store);
-  
+  my $retention = config_get($host, 'retention');
+  my $now = time();
+
   foreach my $disk (sort keys %{$backup_info}) {
     my $info = $backup_info->{$disk};
     next unless(ref($info) eq 'HASH');
@@ -733,14 +734,56 @@ sub perform_retention($$) {
     my @fulls = grep { exists($info->{full}->{$_}) } @backup_points;
     $must_save{$fulls[0]} = 1;
 
-    # Walk the list for backups within our retention period.
+    # Process retention policy
+    my %parts = split(/[;,]/, $retention);
+    my @periods = sort { $a <=> $b } keys(%parts);
+    my %backup_bins;
+    foreach(@periods) {
+      $backup_bins{$_} = ();
+    }
+    my $cutoff = $now - $periods[0];
+    # Sort backups into time period sections
     foreach (@backup_points) {
-      if($_ >= $cutoff) {
-        $must_save{$_} = 1;
+      # @backup_points is in descending order (newest first)
+      while ($_ <= $cutoff) {
+        # Move to the next largest bin if the current backup is not in the
+        # current bin. However, if there is no larger bin, then don't
+        shift(@periods);
+        if (@periods) {
+          $cutoff = $now - $periods[0];
+        } else {
+          last;
+        }
       }
-      else {
-        # they are in decending order, once we miss, all will miss
+      # Throw away all backups older than the largest time period specified
+      if (!@periods) {
         last;
+      }
+      push(@{$backup_bins{$periods[0]}}, $_);
+    }
+    foreach (keys(%backup_bins)) {
+      my $keep = $parts{$_}; # How many backups to keep
+      if (!$keep) { next; }  # Don't keep any backups if none specified
+      my @backups = @{$backup_bins{$_}};
+      my $total = @backups;  # How many backups we have
+      print "$keep, $total, $_\n";
+      # If we have less backups than we should keep, keep them all
+      if ($total < $keep) { $keep = $total };
+      for (my $i = 1; $i <= $keep; $i++) {
+        my $idx = int(($i * $total) / $keep) - 1;
+        print "$idx\n";
+        $must_save{$backups[$idx]} = 1;
+      }
+    }
+    if ($DEBUG) {
+      print "Backup bins - keep the following backups:\n";
+      foreach my $a (keys(%backup_bins)) {
+        print "    => $a\n";
+        foreach my $i (@{$backup_bins{$a}}) {
+          if (!exists($must_save{$i})) { next; };
+          my $trans = $now - $i;
+          print "        => $i ($trans seconds old)\n";
+        }
       }
     }
 
