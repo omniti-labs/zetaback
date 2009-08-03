@@ -779,18 +779,19 @@ sub perform_retention($$) {
         if ($total < $keep) { $keep = $total };
         for (my $i = 1; $i <= $keep; $i++) {
           my $idx = int(($i * $total) / $keep) - 1;
-          push(@{$must_save{$backups[$idx]}}, "retention policy");
+          push(@{$must_save{$backups[$idx]}}, "retention policy - $_");
         }
       }
     }
     if ($DEBUG) {
-      print "    => Backup bins (keep):\n";
+      print "    => Backup bins:\n";
       foreach my $a (keys(%backup_bins)) {
         print "      => $a\n";
         foreach my $i (@{$backup_bins{$a}}) {
-          if (!exists($must_save{$i})) { next; };
           my $trans = $now - $i;
-          print "         => $i ($trans seconds old)\n";
+          print "         => $i ($trans seconds old)";
+          if (exists($must_save{$i})) { print " => keep" };
+          print "\n";
         }
       }
     }
