@@ -322,8 +322,32 @@ backup.
 
 =item retention
 
-The retention time (in seconds) for backups.  Defaults to (14 * 86400), or two
-weeks.
+The retention time (in seconds) for backups.  This can be a simple number, in
+which case all backups older than this will be expunged.
+
+The retention specification can also be more complex, and consist of pairs of
+values separated by a comma. The first value is a time period in seconds, and
+the second value is how many backups should be retained within that period.
+For example:
+
+retention = 3600,4;86400,11
+
+This will keep up to 4 backups for the first hour, and an additional 11
+backups over 24 hours. The times do not stack. In other words, the 11 backups
+would be kept during the period from 1 hour old to 24 hours old, or one every
+2 hours.
+
+Any backups older than the largest time given are deleted. In the above
+example, all backups older than 24 hours are deleted.
+
+If a second number is not specified, then all backups are kept within that
+period.
+
+Note: Full backups are never deleted if they are depended upon by an
+incremental. In addition, the most recent backup is never deleted, regardless
+of how old it is.
+
+This value defaults to (14 * 86400), or two weeks.
 
 =item compressionlevel
 
