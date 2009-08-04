@@ -767,8 +767,16 @@ sub perform_retention($$) {
     push(@{$must_save{$fulls[0]}}, "most recent full");
 
     # Process retention policy
-    my %parts = split(/[;,]/, $retention);
-    my @periods = sort { $a <=> $b } keys(%parts);
+    my @parts = split(/;/, $retention);
+    my %retention_map;
+    foreach (@parts) {
+      my ($period, $amount) = split(/,/);
+      if (!defined($amount)) {
+        $amount = -1;
+      }
+      $retention_map{$period} = $amount;
+    }
+    my @periods = sort { $a <=> $b } keys(%retention_map);
     my %backup_bins;
     foreach(@periods) {
       $backup_bins{$_} = ();
@@ -794,11 +802,12 @@ sub perform_retention($$) {
       push(@{$backup_bins{$periods[0]}}, $_);
     }
     foreach (keys(%backup_bins)) {
-      my $keep = $parts{$_}; # How many backups to keep
-      if (!$keep) { next; }  # Don't keep any backups if none specified
+      my $keep = $retention_map{$_}; # How many backups to keep
       if ($backup_bins{$_}) {
         my @backups = @{$backup_bins{$_}};
         my $total = @backups;  # How many backups we have
+        # If we didn't specify how many to keep, keep them all
+        if ($keep == -1) { $keep = $total };
         # If we have less backups than we should keep, keep them all
         if ($total < $keep) { $keep = $total };
         for (my $i = 1; $i <= $keep; $i++) {
