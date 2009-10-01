@@ -31,6 +31,7 @@ $conf{'default'}->{'time_format'} = "%Y-%m-%d %H:%M:%S";
 $conf{'default'}->{'retention'} = 14 * 86400;
 $conf{'default'}->{'compressionlevel'} = 1;
 $conf{'default'}->{'dataset_backup'} = 0;
+$conf{'default'}->{'dataset_recursive'} = 0;
 
 =pod
 
@@ -366,6 +367,14 @@ key.  There is no default for this setting.
 By default zetaback backs zfs filesystems up to files. This option lets you
 specify that the backup go be stored as a zfs dataset on the backup host.
 
+=item dataset_recursive
+
+If dataset backups are enabled, this specifies that the -R option to zfs send
+be used to recursively send child filesystems across all at once. The -R
+option was only introduced in Solaris 10 8/07 (u4) and so that release or a
+later release must be used on all machines being backed up, as well as the
+backup server itself.
+
 =back
 
 =head1 CONFIGURATION EXAMPLES
@@ -603,7 +612,7 @@ sub zfs_remove_snap($$$) {
 # Lots of args.. internally called.
 sub zfs_do_backup($$$$$$;$) {
   my ($host, $fs, $type, $point, $store, $dumpname, $base) = @_;
-  my ($storefs, $encodedname);
+  my ($storefs, $fsname);
   my $agent = config_get($host, 'agent');
   my $ssh_config = config_get($host, 'ssh_config');
   $ssh_config = "-F $ssh_config" if($ssh_config);
@@ -632,11 +641,24 @@ sub zfs_do_backup($$$$$$;$) {
       $storefs = get_fs_from_mountpoint($basestore);
       $storefs="$storefs/$host";
     }
-    $encodedname = fs_encode($dumpname);
-    print STDERR "Receiving to zfs filesystem $storefs/$encodedname\n"
+    my $recvopt = "";
+    my $fsname = $dumpname;
+    if (config_get($host, 'dataset_recursive') == 0) {
+      # TODO - fsname might need to be changed to just the hostname
+      $recvopt = "-d";
+    } else {
+      $fsname = fs_encode($fsname);
+    }
+    print STDERR "Receiving to zfs filesystem $storefs/$fsname\n"
       if($DEBUG);
-    zfs_create_intermediate_filesystems("$storefs/$encodedname");
-    open(LBACKUP, "|__ZFS__ recv $storefs/$encodedname");
+    if (config_get($host, 'dataset_recursive') == 1) {
+      # Create all filesystems, including the destination one
+      zfs_create_intermediate_filesystems("$storefs/$fsname/");
+    } else {
+      # Create intermediate filesystems
+      zfs_create_intermediate_filesystems("$storefs/$fsname");
+    }
+    open(LBACKUP, "|__ZFS__ recv $recvopt $storefs/$fsname");
   }
   # Do it. yeah.
   eval {
@@ -665,8 +687,8 @@ sub zfs_do_backup($$$$$$;$) {
       rename("$store/.$dumpname", "$store/$dumpname") || die "cannot rename dump\n";
     } else {
       # Check everything is ok
-      `__ZFS__ list $storefs/$encodedname`;
-      die "dump failed (received snapshot $storefs/$encodedname does not exist)\n"
+      `__ZFS__ list $storefs/$fsname`;
+      die "dump failed (received snapshot $storefs/$fsname does not exist)\n"
         if $?;
     }
   };
@@ -684,7 +706,7 @@ sub zfs_do_backup($$$$$$;$) {
     my @st = stat("$store/$dumpname");
     $size = pretty_size($st[7]);
   } else {
-    $size = `__ZFS__ get -Ho value used $storefs/$encodedname`;
+    $size = `__ZFS__ get -Ho value used $storefs/$fsname`;
     chomp $size;
   }
   zetaback_log($host, "SUCCESS[$size] $host:$fs $type\n");

@@ -11,7 +11,7 @@ use Data::Dumper;
 
 use vars qw/%conf $version_string
             $PREFIX $CONF $LIST $FULL $SNAP $ZFS $BASE $RESTORE $VERSION
-            $BUG_6343779 $NEEDSFD $DSET/;
+            $BUG_6343779 $NEEDSFD $DSET $DSET_RECURSE/;
 $version_string = '0.1';
 $PREFIX = q^__PREFIX__^;
 $CONF = qq^$PREFIX/etc/zetaback_agent.conf^;
@@ -27,7 +27,7 @@ zetaback_agent - client-side component of zetaback.
 
   zetaback_agent -v
 
-  zetaback_agent -l [-c conf]
+  zetaback_agent -l [-sr] [-c conf]
 
   zetaback_agent -r [-b <timestamp>] [-c conf] [-z zfs]
 
@@ -35,7 +35,9 @@ zetaback_agent - client-side component of zetaback.
 
   zetaback -i <timestamp> [-c conf] [-z zfs]
 
-  zetaback -d <snap> -z <zfs> [-c conf]
+  zetaback -s <timestamp> [-i <timestamp>] [-sr] [-c conf] [-z zfs]
+
+  zetaback -d <snap> [-sr] -z <zfs> [-c conf]
 
 =cut
 
@@ -48,6 +50,7 @@ GetOptions(
   "f=s" => \$FULL,
   "i=s" => \$BASE,
   "s=s" => \$DSET,
+  "sr"  => \$DSET_RECURSE,
   "b=s" => \$BUG_6343779,
   "v"   => \$VERSION,
 );
@@ -92,6 +95,11 @@ Perform an incremental backup.  The name of the backup will include
 Perform a dataset backup.  The name of the backup will include 
 <timestamp>, which is provided by the backup server. This requires the -i
 option to specify the base dataset the expected by the backup server.
+
+=item -sr
+
+Specifies that any dataset backup should be recursive. When used in
+combination with -l, don't list any child filesystems.
 
 =item -l
 
@@ -203,7 +211,13 @@ sub zfs_agent_remove_snap {
   else {
     die "zfs_agent_remove_snap: illegal snap: $SNAP\n";
   }
-  `__ZFS__ destroy $target`;
+  if ($DSET_RECURSE) {
+    # If we recursively destroy a snapshot, snapshots with the same name in
+    # child filesystems are deleted also
+    `__ZFS__ destroy -r $target`;
+  } else {
+    `__ZFS__ destroy $target`;
+  }
 }
 
 sub zfs_agent_perform_full {
@@ -243,15 +257,21 @@ sub zfs_agent_perform_dataset {
   unless($ZFS && $DSET) {
     die "zfs_agent_perform_dataset: bad args\n"
   }
-  `__ZFS__ snapshot $target`;
+  if ($DSET_RECURSE) {
+    `__ZFS__ snapshot -r $target`;
+  } else {
+    `__ZFS__ snapshot $target`;
+  }
   # $BASE (the base snapshot) is optional. If provided, send an incremental
   # snapshot
-  my @cmd;
-  if ($BASE) {
-    @cmd = ("__ZFS__", "send", "-i", $base, $target);
-  } else {
-    @cmd = ("__ZFS__", "send", $target);
+  my @cmd = ("__ZFS__", "send");
+  if ($DSET_RECURSE) {
+    push(@cmd, "-R");
   }
+  if ($BASE) {
+    push(@cmd, "-i", $base);
+  }
+  push(@cmd, $target);
   if($NEEDSFD) {
     fifo_exec(@cmd);
   } else {
@@ -269,12 +289,30 @@ sub zfs_agent_list {
     (my $fs = $line[0]) =~ s/\@.+//;
     my $excl = (split(/\s+/,`__ZFS__ get -H com.omniti.labs.zetaback:exclude $fs`))[2];
     if(($excl ne "on") && ($fs =~ /$conf{pattern}/)) {
+      my $fsname = $line[0];
+      my $snapname = "";
       if($line[0] =~ /(\S+)\@([^\@]+)$/) {
-        $zfs{$1} ||= [];
-        push @{$zfs{$1}}, $2;
+        $fsname = $1;
+        $snapname = $2;
       }
-      else {
-        $zfs{$line[0]} ||= [];
+      if ($DSET_RECURSE) {
+        # We don't display child filesystems if the parent has already been
+        # listed and we are using zfs send -R
+        my $match = 0;
+        foreach my $existingfs (keys %zfs) {
+          # Look to see if the current filesystem is a child of a filesystem
+          # we already added to the list
+          if (substr($fsname, 0, length($existingfs)) eq $existingfs) {
+            $match = 1;
+            last;
+          }
+        }
+        # Skip this filesystem if we had a match previously
+        if ($match) { next; }
+      }
+      $zfs{$fsname} ||= [];
+      if ($snapname ne "") {
+        push @{$zfs{$fsname}}, $snapname;
       }
     }
   }
