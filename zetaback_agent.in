@@ -302,7 +302,8 @@ sub zfs_agent_list {
         foreach my $existingfs (keys %zfs) {
           # Look to see if the current filesystem is a child of a filesystem
           # we already added to the list
-          if (substr($fsname, 0, length($existingfs)) eq $existingfs) {
+          if (substr($fsname, 0, length($existingfs)) eq $existingfs &&
+            length($fsname) != length($existingfs)) {
             $match = 1;
             last;
           }
