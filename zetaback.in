@@ -562,10 +562,16 @@ sub scan_for_backups($) {
   while (<ZFSLIST>) {
       my @F = split(' ');
       my ($rawfs, $snap) = split('@', $F[0]);
-      my ($whence) = ($snap =~ /(\d+)/);
+      my ($whence) = ($snap =~ /__zb_dset_(\d+)/);
       next unless $whence;
       my @fsparts = split('/', $rawfs);
-      my $fs = fs_decode($fsparts[-1]);
+      my $fs;
+      if (config_get("default", "dataset_recursive") == 0) {
+        $fs = fs_decode($fsparts[-1]);
+      } else {
+        $fs = $rawfs;
+        $fs =~ s+$storefs/++;
+      }
       # Treat a dataset backup as a full backup from the point of view of the
       # backup lists
       $info{$fs}->{full}->{$whence}->{'snapshot'} = $snap;
@@ -602,11 +608,16 @@ sub zfs_remove_snap($$$) {
   my ($host, $fs, $snap) = @_;
   my $agent = config_get($host, 'agent');
   my $ssh_config = config_get($host, 'ssh_config');
+  my ($recurse, $recursemsg);
   $ssh_config = "-F $ssh_config" if($ssh_config);
   print "Using custom ssh config file: $ssh_config\n" if($DEBUG);
   return unless($snap);
-  print "Dropping $snap on $fs\n" if($DEBUG);
-  `ssh $ssh_config $host $agent -z $fs -d $snap`;
+  if (config_get($host, "dataset_recursive") == 1) {
+    $recurse = "-sr";
+    $recursemsg = "(recursively)";
+  }
+  print "Dropping $snap on $fs $recursemsg\n" if($DEBUG);
+  `ssh $ssh_config $host $agent $recurse -z $fs -d $snap`;
 }
 
 # Lots of args.. internally called.
@@ -615,6 +626,7 @@ sub zfs_do_backup($$$$$$;$) {
   my ($storefs, $fsname);
   my $agent = config_get($host, 'agent');
   my $ssh_config = config_get($host, 'ssh_config');
+  my $DEBUGLOG="2>>/tmp/zetaback_command_output" if ($DEBUG);
   $ssh_config = "-F $ssh_config" if($ssh_config);
   print "Using custom ssh config file: $ssh_config\n" if($DEBUG);
 
@@ -622,7 +634,7 @@ sub zfs_do_backup($$$$$$;$) {
   if ($type ne "s") {
     my $cl = config_get($host, 'compressionlevel');
     if ($cl >= 1 && $cl <= 9) {
-        open(LBACKUP, "|gzip -$cl >$store/.$dumpname") ||
+        open(LBACKUP, "|gzip -$cl >$store/.$dumpname $DEBUGLOG") ||
         die "zfs_full_backup: cannot create dump\n";
     } else {
         open(LBACKUP, ">$store/.$dumpname") ||
@@ -642,9 +654,8 @@ sub zfs_do_backup($$$$$$;$) {
       $storefs="$storefs/$host";
     }
     my $recvopt = "";
-    my $fsname = $dumpname;
-    if (config_get($host, 'dataset_recursive') == 0) {
-      # TODO - fsname might need to be changed to just the hostname
+    $fsname = $dumpname;
+    if (config_get($host, 'dataset_recursive') == 1) {
       $recvopt = "-d";
     } else {
       $fsname = fs_encode($fsname);
@@ -652,13 +663,19 @@ sub zfs_do_backup($$$$$$;$) {
     print STDERR "Receiving to zfs filesystem $storefs/$fsname\n"
       if($DEBUG);
     if (config_get($host, 'dataset_recursive') == 1) {
-      # Create all filesystems, including the destination one
-      zfs_create_intermediate_filesystems("$storefs/$fsname/");
+      # We need to create filesystems as deep as the poolname and receive to
+      # that in order to preserve the exact layout
+      my @fsparts = split(/\//, $fsname);
+      my $poolname = $fsparts[0];
+      zfs_create_intermediate_filesystems("$storefs/$poolname/");
+      print "Running __ZFS__ recv $recvopt $storefs/$poolname\n" if ($DEBUG);
+      open(LBACKUP, "|__ZFS__ recv $recvopt $storefs/$poolname $DEBUGLOG");
     } else {
       # Create intermediate filesystems
       zfs_create_intermediate_filesystems("$storefs/$fsname");
+      print "Running __ZFS__ recv $recvopt $storefs/$fsname\n" if ($DEBUG);
+      open(LBACKUP, "|__ZFS__ recv $recvopt $storefs/$fsname $DEBUGLOG");
     }
-    open(LBACKUP, "|__ZFS__ recv $recvopt $storefs/$fsname");
   }
   # Do it. yeah.
   eval {
@@ -674,6 +691,9 @@ sub zfs_do_backup($$$$$$;$) {
       }
       if ($type eq "f" || $type eq "s") {
         push @cmd, ("-$type", $point);
+      }
+      if ($type eq "s" || config_get($host, 'dataset_recursive') == 1) {
+        push @cmd, ("-sr")
       }
       open STDIN, "/dev/null" || exit(-1);
       open STDOUT, ">&LBACKUP" || exit(-1);
@@ -754,7 +774,7 @@ sub zfs_dataset_backup($$$$) {
   my $agent = config_get($host, 'agent');
 
   my $point = time();
-  my $dumpname = "$fs\@$point";
+  my $dumpname = "$fs\@__zb_dset_$point";
 
   zfs_do_backup($host, $fs, 's', $point, $store, $dumpname, $base);
 }
@@ -1238,12 +1258,24 @@ sub plan_and_run($$$) {
     # Get list of zfs filesystems from the agent
     open(SILENT, ">&", \*STDERR);
     close(STDERR);
-    my $rv = open(ZFSLIST, "ssh $ssh_config $host $agent -l |");
+    my $recurse = "";
+    if (config_get($host, 'dataset_backup') == 1 &&
+      config_get($host, 'dataset_recursive') == 1) {
+      $recurse = "-sr";
+    }
+    my $rv = open(ZFSLIST, "ssh $ssh_config $host $agent -l $recurse |");
     open(STDERR, ">&", \*SILENT);
     close(SILENT);
     next unless $rv;
     @disklist = grep { chomp } (<ZFSLIST>);
     close(ZFSLIST);
+
+    if ($DEBUG) {
+      print " => Filesystems for $host (zetaback_agent -l output)\n";
+      foreach my $diskline (@disklist) {
+        print "    $diskline\n";
+      }
+    }
 
     foreach my $diskline (@disklist) {
       chomp($diskline);
