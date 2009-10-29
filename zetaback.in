@@ -657,6 +657,7 @@ sub zfs_do_backup($$$$$$;$) {
     $fsname = $dumpname;
     if (config_get($host, 'dataset_recursive') == 1) {
       $recvopt = "-d";
+      $fsname =~ s/@.*$//;
     } else {
       $fsname = fs_encode($fsname);
     }
