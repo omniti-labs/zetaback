@@ -20,30 +20,48 @@ zfs=@ZFS@
 perl=@PERL@
 pod2man=@POD2MAN@
 
-all:
-	sed -e "s#/usr/bin/perl#$(perl)#;" -e "s#__PREFIX__#$(prefix)#;" \
-		-e "s#__ZFS__#$(zfs)#;" \
-	< zetaback.in > zetaback
+all: install
+
+build: build-agent build-server
+
+build-agent: zetaback_agent.in
 	sed -e "s#/usr/bin/perl#$(perl)#;" -e "s#__PREFIX__#$(prefix)#;" \
 		-e "s#__ZFS__#$(zfs)#;" \
 	< zetaback_agent.in > zetaback_agent
 
-install: all
+build-server: zetaback.in
+	sed -e "s#/usr/bin/perl#$(perl)#;" -e "s#__PREFIX__#$(prefix)#;" \
+		-e "s#__ZFS__#$(zfs)#;" \
+	< zetaback.in > zetaback
+
+install: install-agent install-server
+
+install-agent: build-agent
+	$(mkinstalldirs) ${DESTDIR}${bindir}
+	$(mkinstalldirs) ${DESTDIR}${sysconfdir}
+	$(mkinstalldirs) ${DESTDIR}${mandir}
+	$(mkinstalldirs) ${DESTDIR}${mandir}/man1
+	$(pod2man) zetaback_agent zetaback_agent.1
+	$(install) -m 0755 zetaback_agent ${DESTDIR}${bindir}/zetaback_agent
+	$(install) -m 0644 zetaback_agent.conf ${DESTDIR}${sysconfdir}/zetaback_agent.conf.sample
+	$(install) -m 0644 zetaback_agent.1 ${DESTDIR}${mandir}/man1/zetaback_agent.1
+
+install-server: build-server
 	$(mkinstalldirs) ${DESTDIR}${bindir}
 	$(mkinstalldirs) ${DESTDIR}${sysconfdir}
 	$(mkinstalldirs) ${DESTDIR}${mandir}
 	$(mkinstalldirs) ${DESTDIR}${mandir}/man1
 	$(pod2man) zetaback zetaback.1
-	$(pod2man) zetaback_agent zetaback_agent.1
 	$(install) -m 0755 zetaback ${DESTDIR}${bindir}/zetaback
-	$(install) -m 0755 zetaback_agent ${DESTDIR}${bindir}/zetaback_agent
 	$(install) -m 0644 zetaback.conf ${DESTDIR}${sysconfdir}/zetaback.conf.sample
-	$(install) -m 0644 zetaback_agent.conf ${DESTDIR}${sysconfdir}/zetaback_agent.conf.sample
 	$(install) -m 0644 zetaback.1 ${DESTDIR}${mandir}/man1/zetaback.1
-	$(install) -m 0644 zetaback_agent.1 ${DESTDIR}${mandir}/man1/zetaback_agent.1
 
-clean:
-	rm -f zetaback zetaback_agent zetaback.1 zetaback_agent.1
+clean: clean-server clean-agent
+
+clean-server:
+	rm -f zetaback zetaback.1
+clean-agent:
+	rm -f zetaback_agent zetaback_agent.1
 
 distclean: clean
 	rm -f Makefile
