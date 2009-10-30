@@ -667,8 +667,12 @@ sub zfs_do_backup($$$$$$;$) {
       # We need to create filesystems as deep as the poolname and receive to
       # that in order to preserve the exact layout
       my @fsparts = split(/\//, $fsname);
-      my $poolname = $fsparts[0];
-      zfs_create_intermediate_filesystems("$storefs/$poolname/");
+      if ($fsparts > 1) {
+        my $poolname = $fsparts[0];
+        zfs_create_intermediate_filesystems("$storefs/$poolname/");
+      } else {
+        zfs_create_intermediate_filesystems("$storefs/");
+      }
       print "Running __ZFS__ recv $recvopt $storefs/$poolname\n" if ($DEBUG);
       open(LBACKUP, "|__ZFS__ recv $recvopt $storefs/$poolname $DEBUGLOG");
     } else {
