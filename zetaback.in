@@ -656,7 +656,7 @@ sub zfs_do_backup($$$$$$;$) {
     my $recvopt = "";
     $fsname = $dumpname;
     if (config_get($host, 'dataset_recursive') == 1) {
-      $recvopt = "-d";
+      $recvopt = "-u -d";
       $fsname =~ s/@.*$//;
     } else {
       $fsname = fs_encode($fsname);
@@ -711,6 +711,28 @@ sub zfs_do_backup($$$$$$;$) {
       `__ZFS__ list $storefs/$fsname`;
       die "dump failed (received snapshot $storefs/$fsname does not exist)\n"
         if $?;
+      # If everything was OK, and we have a recursive dataset backup, do some
+      # magic with clones to let it be mounted OK
+      if (config_get($host, 'dataset_recursive') == 1) {
+        my $out;
+        print STDERR "Destroying any existing clones\n" if $DEBUG;
+        $out = `__ZFS__ destroy $storefs/cloned/$fsname 2>&1`;
+        print $out if $DEBUG;
+        print STDERR "Cloning $storefs/$fsname\@__zb_dset_$point to " .
+          "$storefs/cloned/$fsname\n" if $DEBUG;
+        $out = `__ZFS__ clone -p $storefs/$fsname\@__zb_dset_$point $storefs/cloned/$fsname 2>&1`;
+        print $out if $DEBUG;
+
+        print STDERR "Setting mountpoint to inherit for " .
+          "$storefs/cloned/$fsname\n" if $DEBUG;
+        $out = `__ZFS__ inherit -r mountpoint $storefs/cloned/$fsname 2>&1`;
+        print $out if $DEBUG;
+
+        print STDERR "Now setting mountpoint to $store/$fsname for " .
+          "$storefs/cloned/$fsname\n" if $DEBUG;
+        $out = `__ZFS__ set mountpoint=$store/$fsname $storefs/cloned/$fsname 2>&1`;
+        print $out if $DEBUG;
+      }
     }
   };
   if($@) {
@@ -1264,6 +1286,8 @@ sub plan_and_run($$$) {
       config_get($host, 'dataset_recursive') == 1) {
       $recurse = "-sr";
     }
+    print "=> Running ssh $ssh_config $host $agent -l $recurse\n"
+      if $DEBUG;
     my $rv = open(ZFSLIST, "ssh $ssh_config $host $agent -l $recurse |");
     open(STDERR, ">&", \*SILENT);
     close(SILENT);
