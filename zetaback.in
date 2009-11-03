@@ -714,13 +714,20 @@ sub zfs_do_backup($$$$$$;$) {
       # If everything was OK, and we have a recursive dataset backup, do some
       # magic with clones to let it be mounted OK
       if (config_get($host, 'dataset_recursive') == 1) {
-        my $out;
+        my ($out, $fslist);
         print STDERR "Destroying any existing clones\n" if $DEBUG;
-        $out = `__ZFS__ destroy $storefs/cloned/$fsname 2>&1`;
+        $out = `__ZFS__ destroy -r $storefs/cloned/$fsname 2>&1`;
         print $out if $DEBUG;
         print STDERR "Cloning $storefs/$fsname\@__zb_dset_$point to " .
           "$storefs/cloned/$fsname\n" if $DEBUG;
-        $out = `__ZFS__ clone -p $storefs/$fsname\@__zb_dset_$point $storefs/cloned/$fsname 2>&1`;
+        $fslist = `__ZFS__ list -H -t filesystem -o name | grep '^$storefs/$fsname`;
+        foreach my $fs (split /\n/, $fslist) {
+          my $clonefs = $fs;
+          $clonefs =~ s/($storefs\/)(.*)/\1cloned\/\2/;
+          print "=> $fs\@__zb_dset_$point to $clonefs\n" if $DEBUG;
+          $out = `__ZFS__ clone -p $fs\@__zb_dset_$point $clonefs 2>&1`;
+          print $out if $DEBUG;
+        }
         print $out if $DEBUG;
 
         print STDERR "Setting mountpoint to inherit for " .
