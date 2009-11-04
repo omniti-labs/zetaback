@@ -1,42 +1,6 @@
 #!/bin/bash
-SRCPOOL=zbsrctest
-DSTPOOL=zbdsttest
-POOLSIZE=100M
-
-LOGFILE=zbtest.log
-
-# Commands
-ZPOOL=/usr/sbin/zpool
-ZFS=/usr/sbin/zfs
-DATE=/bin/date
-ZETABACK=$PWD/../zetaback
-
-# Utility functions
-log() {
-    echo "`$DATE '+%Y-%m-%d %H:%M:%S'` : $@"
-    echo "`$DATE '+%Y-%m-%d %H:%M:%S'` : $@" >> $LOGFILE
-}
-
-yesno() {
-    local REPLY
-    echo -n "$@ (y/n) "
-    read
-    while [[ "$REPLY" != "n" && $REPLY != "y" ]]; do
-        echo -n "Valid answers are y, n"
-        read
-    done
-    # log the question and answer
-    log "$@ (y/n) $REPLY"
-    # Return true if we answered yes
-    [[ $REPLY == 'y' ]]
-}
-
-require_root() {
-    if [[ $UID != 0 ]]; then
-        echo This script must be run as root
-        exit 1
-    fi
-}
+. lib/config.sh
+. lib/functions.sh
 
 # Test script specific functions
 delete_pool_if_exists() {
@@ -71,17 +35,23 @@ create_test_filesystems() {
     create_zfs $SRCPOOL/test/foo
     create_zfs $SRCPOOL/test/foo/bar
     create_zfs $SRCPOOL/test/baz
+    zetaback_setclass $SRCPOOL/test/baz testclass
 }
 
 generate_zetaback_conf() {
     log "Generating zetaback config"
     cat > zetaback_test.conf <<EOF
 default {
-    store = /$DSTPOOL
+    store = /$DSTPOOL/%h
     archive = /$DSTPOOL/archives
     agent = "$PWD/../zetaback_agent -c $PWD/zetaback_agent_test.conf"
     backup_interval = 10
     full_interval = 604800
+}
+
+testclass {
+    type = class
+    store = /$DSTPOOL/classy/%h
 }
 
 $HOSTNAME { }
@@ -104,6 +74,11 @@ run_zetaback() {
 zetaback_ignore() {
     log "Setting zetaback ignore user property on $1"
     `zfs set com.omniti.labs.zetaback:exclude=on $1`
+}
+
+zetaback_setclass() {
+    log "Setting zetaback class property on $1 to $2"
+    `zfs set com.omniti.labs.zetaback:class=$2 $1`
 }
 
 ### Main program thread
