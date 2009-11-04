@@ -267,7 +267,7 @@ sub zfs_agent_list {
     chomp;
     my @line = split /\t/;
     (my $fs = $line[0]) =~ s/\@.+//;
-    my $excl = (split(/\s+/,`__ZFS__ get -H com.omniti.labs.zetaback:exclude $fs`))[2];
+    my $excl = (split(/\s+/,`__ZFS__ get -H com.omniti.labs.zetaback:exclude $fs 2>/dev/null`))[2];
     if(($excl ne "on") && ($fs =~ /$conf{pattern}/)) {
       if($line[0] =~ /(\S+)\@([^\@]+)$/) {
         $zfs{$1} ||= [];
