@@ -366,6 +366,13 @@ key.  There is no default for this setting.
 By default zetaback backs zfs filesystems up to files. This option lets you
 specify that the backup go be stored as a zfs dataset on the backup host.
 
+=item offline
+
+Setting this option to 1 for a host will mark it as being 'offline'. Hosts
+that are marked offline will not be backed up, will not have any old backups
+expunged and will not be included in the list of policy violators. However,
+the host will still be shown when listing backups and archiving.
+
 =back
 
 =head1 CONFIGURATION EXAMPLES
