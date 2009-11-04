@@ -1339,7 +1339,13 @@ else {
          ($HOST =~ /^\/(.*)\/$/ && $host =~ /$1/))) {
       next;
     }
-  
+
+    # Skip if the host is marked as 'offline' and we are not listing backups
+    if (config_get($host, 'offline') == 1 && 
+        !$LIST && !$SUMMARY && !$SUMMARY_EXT && !$ARCHIVE) {
+      next;
+    }
+
     my $store = config_get($host, 'store');
     $store =~ s/%h/$host/g;;
     mkdir $store if(! -d $store);
