@@ -448,8 +448,22 @@ sub parse_config() {
   }
   close(CONF);
 }
-sub config_get($$) {
-  return $conf{$_[0]}->{$_[1]} || $conf{'default'}->{$_[1]};
+sub config_get($$;$) {
+  # Params: host, key, class
+  if ($_[2]) {
+    return $conf{$_[0]}->{$_[1]} || $conf{$_[2]}->{$_[1]} ||
+        $conf{'default'}->{$_[1]};
+  } else {
+    return $conf{$_[0]}->{$_[1]} || $conf{'default'}->{$_[1]};
+  }
+}
+
+sub get_store($;$) {
+  my ($host, $class) = @_;
+  my $store = config_get($host, 'store', $class);
+  $store =~ s/%h/$host/g;;
+  mkdir $store if(! -d $store);
+  return $store;
 }
 
 sub fs_encode($) {
@@ -499,8 +513,7 @@ sub lock($;$$) {
   my ($host, $file, $nowait) = @_;
   print "Acquiring lock for $host:$file\n" if($DEBUG);
   $file ||= 'master.lock';
-  my $store = config_get($host, 'store');
-  $store =~ s/%h/$host/g;
+  my $store = get_store($host); # Don't take classes into account - not needed
   return 1 if(exists($locks{"$host:$file"}));
   open(LOCK, "+>>$store/$file") || return 0;
   unless(flock(LOCK, LOCK_EX | ($nowait ? LOCK_NB : 0))) {
@@ -514,8 +527,7 @@ sub unlock($;$$) {
   my ($host, $file, $remove) = @_;
   print "Releasing lock for $host:$file\n" if($DEBUG);
   $file ||= 'master.lock';
-  my $store = config_get($host, 'store');
-  $store =~ s/%h/$host/g;
+  my $store = get_store($host); # Don't take classes into account - not needed
   return 0 unless(exists($locks{"$host:$file"}));
   *UNLOCK = $locks{$file};
   unlink("$store/$file") if($remove);
@@ -959,7 +971,8 @@ sub get_fs_from_mountpoint($) {
 sub perform_restore() {
   my %source;
 
-  foreach my $host (grep { $_ ne "default" } keys %conf) {
+  foreach my $host (grep { $_ ne "default" && $conf{$_}->{"type"} ne "class"} 
+      keys %conf) {
     # If -h was specific, we will skip this host if the arg isn't
     # an exact match or a pattern match
     if($HOST &&
@@ -968,9 +981,7 @@ sub perform_restore() {
       next;
     }
 
-    my $store = config_get($host, 'store');
-    $store =~ s/%h/$host/g;;
-    mkdir $store if(! -d $store);
+    my $store = get_store($host);
 
     my $backup_info = scan_for_backups($store);
     foreach my $disk (sort keys %{$backup_info}) {
@@ -1009,9 +1020,7 @@ sub perform_restore() {
   my $timestamp = choose("Restore as of timestamp", \%times,
                          sub { $_[0] <=> $_[1]; });
 
-  my $store = config_get($host, 'store');
-  $store =~ s/%h/$host/g;;
-  mkdir $store if(! -d $store);
+  my $store = get_store($host);
   my $backup_info = scan_for_backups($store);
   my @backup_list = reverse backup_chain($backup_info->{$disk}, $timestamp);
 
@@ -1205,8 +1214,9 @@ sub show_backups($$$) {
   }
 }
 
-sub plan_and_run($$$) {
-  my ($host, $store, $diskpat) = @_;
+sub plan_and_run($$) {
+  my ($host, $diskpat) = @_;
+  my $store;
   my $ssh_config = config_get($host, 'ssh_config');
   $ssh_config = "-F $ssh_config" if($ssh_config);
   my %suppress;
@@ -1232,10 +1242,12 @@ sub plan_and_run($$$) {
 
     foreach my $diskline (@disklist) {
       chomp($diskline);
-      next unless($diskline =~ /^(\S+) \[([^\]]*)\]/);
+      next unless($diskline =~ /^(\S+) \[([^\]]*)\](?: {([^}]*}))?/);
       my $diskname = $1;
       my %snaps;
       map { $snaps{$_} = 1 } (split(/,/, $2));
+      my $class = $3;
+      $store = get_store($host, $class);
  
       # We've just done this.
       next if($suppress{"$host:$diskname"}); 
@@ -1254,10 +1266,12 @@ sub plan_and_run($$$) {
   
       # Should we do a backup?
       my $backup_type = 'no';
-      if(time() > $backup_info->{last_backup} + config_get($host, 'backup_interval')) {
+      if(time() > $backup_info->{last_backup} + config_get($host,
+          'backup_interval', $class)) {
         $backup_type = 'incremental';
       }
-      if(time() > $backup_info->{last_full} + config_get($host, 'full_interval')) {
+      if(time() > $backup_info->{last_full} + config_get($host,
+          'full_interval', $class)) {
         $backup_type = 'full';
       }
       # If we want an incremental, but have no full, then we need to upgrade to full
@@ -1271,8 +1285,8 @@ sub plan_and_run($$$) {
       }
       $backup_type = 'full' if($FORCE_FULL);
       $backup_type = 'incremental' if($FORCE_INC);
-      $backup_type = 'dataset' if(config_get($host, 'dataset_backup') eq 1 &&
-        $backup_type ne 'no');
+      $backup_type = 'dataset' if(config_get($host, 'dataset_backup', $class)
+        eq 1 && $backup_type ne 'no');
 
       print " => doing $backup_type backup\n" if($DEBUG);
       # We need to drop a __zb_base snap or a __zb_incr snap before we proceed
@@ -1338,7 +1352,8 @@ if($RESTORE) {
   perform_restore();
 }
 else {
-  foreach my $host (grep { $_ ne "default" } keys %conf) {
+  foreach my $host (grep { $_ ne "default" && $conf{$_}->{"type"} ne "class"}
+      keys %conf) {
     # If -h was specific, we will skip this host if the arg isn't
     # an exact match or a pattern match
     if($HOST &&
@@ -1353,15 +1368,14 @@ else {
       next;
     }
 
-    my $store = config_get($host, 'store');
-    $store =~ s/%h/$host/g;;
-    mkdir $store if(! -d $store);
+    # TODO - remove once class functionality is completed
+    my $store = get_store($host, '');
   
     if($LIST || $SUMMARY || $SUMMARY_EXT || $SUMMARY_VIOLATORS || $ARCHIVE) {
       show_backups($host, $store, $ZFS);
     }
     if($BACKUP) {
-      plan_and_run($host, $store, $ZFS);
+      plan_and_run($host, $ZFS);
     }
     if($EXPUNGE) {
       perform_retention($host, $store);
