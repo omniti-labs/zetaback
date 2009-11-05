@@ -450,8 +450,9 @@ sub parse_config() {
 }
 sub config_get($$;$) {
   # Params: host, key, class
+  # Order of precedence: class, host, default
   if ($_[2]) {
-    return $conf{$_[0]}->{$_[1]} || $conf{$_[2]}->{$_[1]} ||
+    return $conf{$_[2]}->{$_[1]} || $conf{$_[0]}->{$_[1]} ||
         $conf{'default'}->{$_[1]};
   } else {
     return $conf{$_[0]}->{$_[1]} || $conf{'default'}->{$_[1]};
