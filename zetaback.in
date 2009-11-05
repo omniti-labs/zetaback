@@ -1251,12 +1251,11 @@ sub plan_and_run($$) {
 
     foreach my $diskline (@disklist) {
       chomp($diskline);
-      next unless($diskline =~ /^(\S+) \[([^\]]*)\](?: {([^}]*}))?/);
+      next unless($diskline =~ /^(\S+) \[([^\]]*)\](?: {([^}]*)})?/);
       my $diskname = $1;
       my %snaps;
       map { $snaps{$_} = 1 } (split(/,/, $2));
       my $class = $3;
-      $store = get_store($host, $class);
  
       # We've just done this.
       next if($suppress{"$host:$diskname"}); 
@@ -1266,6 +1265,14 @@ sub plan_and_run($$) {
            !($diskname eq $diskpat ||        # be a specific match or a
              ($diskpat =~ /^\/(.+)\/$/ && $diskname =~ /$1/))); # regex
   
+      $store = get_store($host, $class);
+      if ($DEBUG) {
+        if ($class) {
+            print STDERR "=> Class is $class\n";
+        } else {
+            print STDERR "=> No/default class\n";
+        }
+      }
       print " => Scanning '$store' for old backups of '$diskname'.\n" if($DEBUG);
 
       # Make directory on demand
