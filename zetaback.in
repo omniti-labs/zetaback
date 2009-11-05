@@ -1230,6 +1230,13 @@ sub plan_and_run($$$) {
     @disklist = grep { chomp } (<ZFSLIST>);
     close(ZFSLIST);
 
+    if ($DEBUG) {
+      print " => Filesystems for $host (zetaback_agent -l output)\n";
+      foreach my $diskline (@disklist) {
+        print "    $diskline\n";
+      }
+    }
+
     foreach my $diskline (@disklist) {
       chomp($diskline);
       next unless($diskline =~ /^(\S+) \[([^\]]*)\]/);
