@@ -10,6 +10,7 @@ use Getopt::Long;
 use MIME::Base64;
 use POSIX qw/strftime/;
 use Fcntl qw/:flock/;
+use File::Path qw/mkpath/;
 use File::Copy;
 use IO::File;
 use Pod::Usage;
@@ -463,7 +464,7 @@ sub get_store($;$) {
   my ($host, $class) = @_;
   my $store = config_get($host, 'store', $class);
   $store =~ s/%h/$host/g;;
-  mkdir $store if(! -d $store);
+  mkpath($store) if(! -d $store);
   return $store;
 }
 
