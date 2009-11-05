@@ -279,6 +279,9 @@ sub zfs_agent_list {
       }
       else {
         $zfs{$line[0]} ||= [];
+        if ($class ne "-" && $class ne "") {
+            $storageclass{$line[0]} = $class;
+        }
       }
     }
   }
