@@ -656,7 +656,7 @@ sub zfs_do_backup($$$$$$;$) {
     my $recvopt = "";
     $fsname = $dumpname;
     if (config_get($host, 'dataset_recursive') == 1) {
-      $recvopt = "-u -d";
+      $recvopt = "-u -d -F";
       $fsname =~ s/@.*$//;
     } else {
       $fsname = fs_encode($fsname);
@@ -738,6 +738,10 @@ sub zfs_do_backup($$$$$$;$) {
         print STDERR "Now setting mountpoint to $store/$fsname for " .
           "$storefs/cloned/$fsname\n" if $DEBUG;
         $out = `__ZFS__ set mountpoint=$store/$fsname $storefs/cloned/$fsname 2>&1`;
+        print $out if $DEBUG;
+
+        print STDERR "Preventing mount of $storefs/$fsname\n" if $DEBUG;
+        $out = `__ZFS__ set canmount=off $storefs/$fsname`;
         print $out if $DEBUG;
       }
     }
