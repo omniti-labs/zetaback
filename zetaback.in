@@ -667,7 +667,7 @@ sub zfs_do_backup($$$$$$;$) {
       zfs_create_intermediate_filesystems("$storefs/$poolname/");
       if (config_get($host, 'dataset_recursive') == 1) {
         print STDERR "Preventing mount of $storefs/$poolname\n" if $DEBUG;
-        $out = `__ZFS__ set canmount=off $storefs/$poolname`;
+        my $out = `__ZFS__ set canmount=off $storefs/$poolname`;
         print $out if $DEBUG;
       }
       print "Running __ZFS__ recv $recvopt $storefs/$poolname\n" if ($DEBUG);
