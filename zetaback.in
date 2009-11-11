@@ -1364,7 +1364,7 @@ sub plan_and_run($$$) {
       unless($NEUTERED || $backup_type eq 'no') {
         # attempt to lock this action, if it fails, skip -- someone else is working it.
         next unless(lock($host, dir_encode($diskname), 1));
-        unlock($host, '.list');
+        unlock($host, '.list', 1);
 
         if($backup_type eq 'full') {
           eval { zfs_full_backup($host, $diskname, $store); };
@@ -1415,7 +1415,7 @@ sub plan_and_run($$$) {
       $suppress{"$host:$diskname"} = 1;
       last if($took_action);
     }
-    unlock($host, '.list');
+    unlock($host, '.list', 1);
   }
 }
 
