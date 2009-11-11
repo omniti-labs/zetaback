@@ -500,11 +500,9 @@ sub pretty_size($) {
 sub lock($;$$) {
   my ($host, $file, $nowait) = @_;
   print "Acquiring lock for $host:$file\n" if($DEBUG);
-  $file ||= 'master.lock';
-  my $store = config_get($host, 'store');
-  $store =~ s/%h/$host/g;
+  $file ||= 'master';
   return 1 if(exists($locks{"$host:$file"}));
-  open(LOCK, "+>>$store/$file") || return 0;
+  open(LOCK, "+>>/tmp/$host.$file.lock") || return 0;
   unless(flock(LOCK, LOCK_EX | ($nowait ? LOCK_NB : 0))) {
     close(LOCK);
     return 0;
@@ -515,12 +513,10 @@ sub lock($;$$) {
 sub unlock($;$$) {
   my ($host, $file, $remove) = @_;
   print "Releasing lock for $host:$file\n" if($DEBUG);
-  $file ||= 'master.lock';
-  my $store = config_get($host, 'store');
-  $store =~ s/%h/$host/g;
+  $file ||= 'master';
   return 0 unless(exists($locks{"$host:$file"}));
   *UNLOCK = $locks{$file};
-  unlink("$store/$file") if($remove);
+  unlink("/tmp/$host.$file.lock") if($remove);
   flock(UNLOCK, LOCK_UN);
   close(UNLOCK);
   return 1;
