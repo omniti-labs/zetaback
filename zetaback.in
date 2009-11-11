@@ -991,7 +991,7 @@ sub get_fs_from_mountpoint($) {
 }
 
 sub perform_restore() {
-  my %source;
+  my (%source, %classmap);
 
   foreach my $host (grep { $_ ne "default" && $conf{$_}->{"type"} ne "class"} 
       keys %conf) {
@@ -1003,24 +1003,33 @@ sub perform_restore() {
       next;
     }
 
-    my $store = get_store($host);
-
-    my $backup_info = scan_for_backups($store);
-    foreach my $disk (sort keys %{$backup_info}) {
-      my $info = $backup_info->{$disk};
-      next unless(ref($info) eq 'HASH');
-      next
-        if($ZFS &&      # if the pattern was specified it could
-           !($disk eq $ZFS ||        # be a specific match or a
-             ($ZFS =~ /^\/(.+)\/$/ && $disk =~ /$1/))); # regex
-      # We want to see this one
-      my @backup_points = (keys %{$info->{full}}, keys %{$info->{incremental}});
-      my @source_points;
-      foreach (@backup_points) {
-        push @source_points, $_ if(!$TIMESTAMP || $TIMESTAMP == $_)
+    foreach my $class (get_classes()) {
+      if ($DEBUG) {
+        if ($class) {
+          print "=> Class: $class\n" if $class;
+        } else {
+          print "=> Class: (none)\n";
+        }
       }
-      if(@source_points) {
-        $source{$host}->{$disk} = \@source_points;
+      my $store = get_store($host, $class);
+      my $backup_info = scan_for_backups($store);
+      foreach my $disk (sort keys %{$backup_info}) {
+        my $info = $backup_info->{$disk};
+        next unless(ref($info) eq 'HASH');
+        next
+          if($ZFS &&      # if the pattern was specified it could
+            !($disk eq $ZFS ||        # be a specific match or a
+              ($ZFS =~ /^\/(.+)\/$/ && $disk =~ /$1/))); # regex
+        # We want to see this one
+        my @backup_points = (keys %{$info->{full}}, keys %{$info->{incremental}});
+        my @source_points;
+        foreach (@backup_points) {
+          push @source_points, $_ if(!$TIMESTAMP || $TIMESTAMP == $_)
+        }
+        if(@source_points) {
+          $source{$host}->{$disk} = \@source_points;
+          $classmap{$host}->{$disk} = $class;
+        }
       }
     }
   }
@@ -1042,7 +1051,7 @@ sub perform_restore() {
   my $timestamp = choose("Restore as of timestamp", \%times,
                          sub { $_[0] <=> $_[1]; });
 
-  my $store = get_store($host);
+  my $store = get_store($host, $classmap{$host}->{$disk});
   my $backup_info = scan_for_backups($store);
   my @backup_list = reverse backup_chain($backup_info->{$disk}, $timestamp);
 
