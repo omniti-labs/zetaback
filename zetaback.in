@@ -1176,8 +1176,9 @@ sub show_backups($$) {
 
       # Quick short-circuit in the case of retention violation checks
       if($SUMMARY_VIOLATORS) {
-        if(time() > $info->{last_full} + config_get($host, 'full_interval') ||
-          time() > $info->{last_backup} + config_get($host, 'backup_interval')) {
+        if(time() > $info->{last_full} + config_get($host, 'full_interval',
+            $class) || time() > $info->{last_backup} + config_get(
+            $host, 'backup_interval', $class)) {
           print "$host:$disk\n";
           pretty_print_backup($info, $host, $info->{last_full});
           # Only print the last backup if it isn't the same as the last full
