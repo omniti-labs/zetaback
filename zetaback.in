@@ -665,11 +665,6 @@ sub zfs_do_backup($$$$$$;$) {
       my @fsparts = split(/\//, $fsname);
       my $poolname = $fsparts[0];
       zfs_create_intermediate_filesystems("$storefs/$poolname/");
-      if (config_get($host, 'dataset_recursive') == 1) {
-        print STDERR "Preventing mount of $storefs/$poolname\n" if $DEBUG;
-        my $out = `__ZFS__ set canmount=off $storefs/$poolname`;
-        print $out if $DEBUG;
-      }
       print "Running __ZFS__ recv $recvopt $storefs/$poolname\n" if ($DEBUG);
       open(LBACKUP, "|__ZFS__ recv $recvopt $storefs/$poolname $DEBUGLOG");
     } else {
@@ -728,12 +723,16 @@ sub zfs_do_backup($$$$$$;$) {
           print "=> $fs\@__zb_dset_$point to $clonefs\n" if $DEBUG;
           $out = `__ZFS__ clone -p $fs\@__zb_dset_$point $clonefs 2>&1`;
           print $out if $DEBUG;
+        }
 
-          print STDERR "Preventing mount of $fs\n" if $DEBUG;
+        print STDERR "Preventing mounting of filesystems:" if $DEBUG;
+        $fslist = `__ZFS__ list -H -t filesystem -o name | grep '^$storefs' | grep -v 'cloned/'`;
+        print STDERR "Preventing mount of $fs\n" if $DEBUG;
+        foreach my $fs (split /\n/, $fslist) {
+          print STDERR " => $fs\n";
           $out = `__ZFS__ set canmount=off $fs`;
           print $out if $DEBUG;
         }
-        print $out if $DEBUG;
 
         print STDERR "Setting mountpoint to inherit for " .
           "$storefs/cloned/$fsname\n" if $DEBUG;
