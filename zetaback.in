@@ -277,6 +277,56 @@ settings enclosed in braces ({}).  Single-line comments begin with a hash
 readability.  Every host to be backed up must have a host stanza in the
 configuration file.
 
+=head2 Storage Classes
+
+In addition to the default and host stanzas, the configuration file can also
+contain 'class' stanzas. Classes allow you to override settings on a
+per-filesystem basis rather than a per-host basis. A class stanza begins with
+the name of the class, and has a setting 'type = class'. For example:
+
+  myclass {
+    type = class
+    store = /path/to/alternate/store
+  }
+
+To add a filesystem to a class, set a zfs user property on the relevant
+filesystem. This must be done on the server that runs the zetaback agent, and
+not the zetaback server itself.
+
+  zfs set com.omniti.labs.zetaback:class=myclass pool/fs
+
+Note that user properties (and therefore classes) are are only available on
+Solaris 10 8/07 and newer, and on Solaris Express build 48 and newer. Only the
+server running the agent needs to have user property support, not the zetaback
+server itself.
+
+The following settings can be included in a class stanza. All other settings
+will be ignored, and their default (or per host) settings used instead:
+
+=over
+
+=item *
+
+store
+
+=item *
+
+full_interval
+
+=item *
+
+backup_interval
+
+=item *
+
+retention
+
+=item *
+
+dataset_backup
+
+=back
+
 =head2 Settings
 
 The following settings are valid in both the default and host scopes:
