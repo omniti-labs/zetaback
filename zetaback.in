@@ -658,7 +658,7 @@ sub zfs_do_backup($$$$$$;$) {
     if ($@) {
       # The zfs filesystem doesn't exist, so we have to work out what it
       # would be
-      my $basestore = config_get($host, 'store');
+      my $basestore = $store;
       $basestore =~ s/\/?%h//g;
       $storefs = get_fs_from_mountpoint($basestore);
       $storefs="$storefs/$host";
