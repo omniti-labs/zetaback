@@ -725,7 +725,7 @@ sub zfs_do_backup($$$$$$;$) {
           print $out if $DEBUG;
         }
 
-        print STDERR "Preventing mounting of filesystems:" if $DEBUG;
+        print STDERR "Preventing mounting of filesystems:\n" if $DEBUG;
         $fslist = `__ZFS__ list -H -t filesystem -o name | grep '^$storefs' | grep -v 'cloned/'`;
         foreach my $fs (split /\n/, $fslist) {
           print STDERR " => $fs\n";
