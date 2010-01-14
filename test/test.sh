@@ -98,7 +98,7 @@ EOF
 }
 
 run_zetaback() {
-    OPTIONS="-d -b -c $PWD/zetaback_test.conf"
+    OPTIONS="-d -b -x -c $PWD/zetaback_test.conf"
     log "Running zetaback $OPTIONS"
     $ZETABACK $OPTIONS 2>&1 | tee -a $LOGFILE
 }
