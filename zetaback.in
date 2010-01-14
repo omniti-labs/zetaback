@@ -743,6 +743,14 @@ sub zfs_do_backup($$$$$$;$) {
         $out = `__ZFS__ set mountpoint=$store/$fsname $storefs/cloned/$fsname 2>&1`;
         print $out if $DEBUG;
 
+        print STDERR "Mounting all cloned filesystems:\n" if $DEBUG;
+        $fslist = `__ZFS__ list -H -t filesystem -o name | grep '^$storefs/cloned/$fsname'`;
+        foreach my $fs (split /\n/, $fslist) {
+          print STDERR " => $fs\n";
+          $out = `__ZFS__ mount $fs`;
+          print $out if $DEBUG;
+        }
+
       }
     }
   };
