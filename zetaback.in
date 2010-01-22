@@ -514,7 +514,6 @@ sub get_store($;$) {
   my ($host, $class) = @_;
   my $store = config_get($host, 'store', $class);
   $store =~ s/%h/$host/g;;
-  mkpath($store) if(! -d $store);
   return $store;
 }
 
@@ -576,6 +575,7 @@ sub lock($;$$) {
   print "Acquiring lock for $host:$file\n" if($DEBUG);
   $file ||= 'master.lock';
   my $store = get_store($host); # Don't take classes into account - not needed
+  mkpath($store) if(! -d $store);
   return 1 if(exists($locks{"$host:$file"}));
   open(LOCK, "+>>$store/$file") || return 0;
   unless(flock(LOCK, LOCK_EX | ($nowait ? LOCK_NB : 0))) {
@@ -590,6 +590,7 @@ sub unlock($;$$) {
   print "Releasing lock for $host:$file\n" if($DEBUG);
   $file ||= 'master.lock';
   my $store = get_store($host); # Don't take classes into account - not needed
+  mkpath($store) if(! -d $store);
   return 0 unless(exists($locks{"$host:$file"}));
   *UNLOCK = $locks{$file};
   unlink("$store/$file") if($remove);
@@ -1371,6 +1372,7 @@ sub plan_and_run($$) {
       print " => Scanning '$store' for old backups of '$diskname'.\n" if($DEBUG);
 
       # Make directory on demand
+      mkpath($store) if(! -d $store);
       my $backup_info = scan_for_backups($store);
       # That gave us info on all backups, we just want this disk
       $backup_info = $backup_info->{$diskname} || {};
