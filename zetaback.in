@@ -1342,6 +1342,10 @@ sub plan_and_run($$$) {
       }
     }
 
+    print " => Running post_command (ssh $ssh_config $host $agent -rpr)\n"
+      if ($DEBUG);
+    `ssh $ssh_config $host $agent -rpr`;
+
     foreach my $diskline (@disklist) {
       chomp($diskline);
       next unless($diskline =~ /^(\S+) \[([^\]]*)\]/);
@@ -1442,6 +1446,10 @@ sub plan_and_run($$$) {
       $suppress{"$host:$diskname"} = 1;
       last if($took_action);
     }
+
+    print " => Running post_command (ssh $ssh_config $host $agent -rpo)\n"
+      if ($DEBUG);
+    `ssh $ssh_config $host $agent -rpo`;
     unlock($host, '.list', 1);
   }
 }
