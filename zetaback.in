@@ -932,6 +932,17 @@ sub perform_retention($$) {
         push(@{$must_save{$_}}, "marked as in use");
       }
     }
+    # Check recursively for backups that are manually marked as 'in use'
+    my @diskparts = split('/', $disk);
+    while (@diskparts) {
+      my $diskpartmunged = join('_', @diskparts);
+      foreach (@backup_points) {
+        if (-e "$store/.inuse-recursive.$diskpartmunged.$_") {
+          push(@{$must_save{$_}}, "marked as in use (recursive)");
+        }
+      }
+      pop(@diskparts);
+    }
 
     my @removals = grep { !exists($must_save{$_}) } @backup_points;
     if($DEBUG) {
@@ -948,7 +959,7 @@ sub perform_retention($$) {
           print " => remove";
         }
         print "\n";
-        print "         inuse file: $store/.inuse.$diskmunged.$_\n";
+        print "         inuse file is: $store/.inuse.$diskmunged.$_\n";
       }
     }
     foreach (@removals) {
