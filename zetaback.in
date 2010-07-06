@@ -1310,13 +1310,18 @@ sub plan_and_run($$$) {
   my %suppress;
   print "Planning '$host'\n" if($DEBUG);
   my $agent = config_get($host, 'agent');
+
+  # We need a lock for the listing.
+  return unless(lock($host, ".list"));
+
+  print " => Running pre_command (ssh $ssh_config $host $agent -rpr)\n"
+    if ($DEBUG);
+  `ssh $ssh_config $host $agent -rpr`;
+
   my $took_action = 1;
   while($took_action) {
     $took_action = 0;
     my @disklist;
-
-    # We need a lock for the listing.
-    return unless(lock($host, ".list"));
 
     # Get list of zfs filesystems from the agent
     open(SILENT, ">&", \*STDERR);
@@ -1341,10 +1346,6 @@ sub plan_and_run($$$) {
         print "    $diskline\n";
       }
     }
-
-    print " => Running pre_command (ssh $ssh_config $host $agent -rpr)\n"
-      if ($DEBUG);
-    `ssh $ssh_config $host $agent -rpr`;
 
     foreach my $diskline (@disklist) {
       chomp($diskline);
@@ -1446,12 +1447,11 @@ sub plan_and_run($$$) {
       $suppress{"$host:$diskname"} = 1;
       last if($took_action);
     }
-
-    print " => Running post_command (ssh $ssh_config $host $agent -rpo)\n"
-      if ($DEBUG);
-    `ssh $ssh_config $host $agent -rpo`;
-    unlock($host, '.list', 1);
   }
+  print " => Running post_command (ssh $ssh_config $host $agent -rpo)\n"
+    if ($DEBUG);
+  `ssh $ssh_config $host $agent -rpo`;
+  unlock($host, '.list', 1);
 }
 
 if($RESTORE) {
