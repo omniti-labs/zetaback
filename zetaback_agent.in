@@ -243,9 +243,9 @@ sub zfs_agent_perform_full {
   unless($ZFS && $FULL =~ /^\d+$/) {
     die "zfs_agent_perform_full: bad fs or snap name\n"
   }
-  run_pre_cmd $ZFS;
+  run_pre_cmd($ZFS);
   `__ZFS__ snapshot $target`;
-  run_post_cmd $ZFS;
+  run_post_cmd($ZFS);
   my @cmd = ("__ZFS__", "send", $target);
   if($NEEDSFD) {
     fifo_exec(@cmd);
@@ -261,9 +261,9 @@ sub zfs_agent_perform_incremental {
   unless($ZFS && $BASE) {
     die "zfs_agent_perform_incremental: bad args\n"
   }
-  run_pre_cmd $ZFS;
+  run_pre_cmd($ZFS);
   `__ZFS__ snapshot $target`;
-  run_post_cmd $ZFS;
+  run_post_cmd($ZFS);
   my @cmd = ("__ZFS__", "send", "-i", $base, $target);
   if($NEEDSFD) {
     fifo_exec(@cmd);
@@ -279,13 +279,13 @@ sub zfs_agent_perform_dataset {
   unless($ZFS && $DSET) {
     die "zfs_agent_perform_dataset: bad args\n"
   }
-  run_pre_cmd $ZFS;
+  run_pre_cmd($ZFS);
   if ($DSET_RECURSE) {
     `__ZFS__ snapshot -r $target`;
   } else {
     `__ZFS__ snapshot $target`;
   }
-  run_post_cmd $ZFS;
+  run_post_cmd($ZFS);
   # $BASE (the base snapshot) is optional. If provided, send an incremental
   # snapshot
   my @cmd = ("__ZFS__", "send");
@@ -386,14 +386,14 @@ sub fifo_exec {
 
 sub run_pre_cmd {
     my $dataset = shift;
-    if ($conf{$pre_cmd}) {
+    if ($conf{pre_cmd}) {
         `$conf{pre_cmd} $dataset`;
     }
 }
 
 sub run_post_cmd {
     my $dataset = shift;
-    if ($conf{$post_cmd}) {
+    if ($conf{post_cmd}) {
         `$conf{post_cmd} $dataset`;
     }
 }
