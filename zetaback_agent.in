@@ -11,7 +11,7 @@ use Data::Dumper;
 
 use vars qw/%conf $version_string
             $PREFIX $CONF $LIST $FULL $SNAP $ZFS $BASE $RESTORE $VERSION
-            $BUG_6343779 $NEEDSFD $DSET $DSET_RECURSE $PRECMD $POSTCMD/;
+            $BUG_6343779 $NEEDSFD $DSET $DSET_RECURSE/;
 $version_string = '0.1';
 $PREFIX = q^__PREFIX__^;
 $CONF = qq^$PREFIX/etc/zetaback_agent.conf^;
@@ -30,8 +30,6 @@ zetaback_agent - client-side component of zetaback.
   zetaback_agent -l [-sr] [-c conf]
 
   zetaback_agent -r [-b <timestamp>] [-c conf] [-z zfs]
-
-  zetaback_agent [-rpr|-rpo]
 
   zetaback -f <timestamp> [-c conf] [-z zfs]
 
@@ -55,8 +53,6 @@ GetOptions(
   "sr"  => \$DSET_RECURSE,
   "b=s" => \$BUG_6343779,
   "v"   => \$VERSION,
-  "rpr" => \$PRECMD,
-  "rpo" => \$POSTCMD
 );
 
 =pod
@@ -127,16 +123,6 @@ Print the version number and exit.
 =item -z
 
 Specify a ZFS filesystem to backup, restore, or delete.
-
-=item -rpr
-
-Run a pre command before the backup begins. Useful for putting a database in
-backup mode before a backup begins. See the pre_cmd entry in the config file.
-
-=item -rpo
-
-Run a post command once the backup ends. See the post_cmd entry in the config
-file.
 
 =back
 
@@ -211,7 +197,11 @@ All filesystems in pool 'zones' except 'foo'
 You can make zetaback run a command before and after the backup is performed.
 This is used for tasks such as ensuring a database is in read-only mode before
 performing a backup. If the config file contains the pre_cmd and/or post_cmd
-options, then the commands will be run at the appropriate times.
+options, then the commands will be run just before and after a snapshot is
+made. These commands are run once for each dataset, and the dataset name is
+passed to the command. If you only want to take action for some datasets and
+not others, then you can check the name of the dataset passed to the command
+to ensure that it matches the datasets you are interested in.
 
 Example:
 
@@ -253,7 +243,9 @@ sub zfs_agent_perform_full {
   unless($ZFS && $FULL =~ /^\d+$/) {
     die "zfs_agent_perform_full: bad fs or snap name\n"
   }
+  run_pre_cmd $ZFS;
   `__ZFS__ snapshot $target`;
+  run_post_cmd $ZFS;
   my @cmd = ("__ZFS__", "send", $target);
   if($NEEDSFD) {
     fifo_exec(@cmd);
@@ -269,7 +261,9 @@ sub zfs_agent_perform_incremental {
   unless($ZFS && $BASE) {
     die "zfs_agent_perform_incremental: bad args\n"
   }
+  run_pre_cmd $ZFS;
   `__ZFS__ snapshot $target`;
+  run_post_cmd $ZFS;
   my @cmd = ("__ZFS__", "send", "-i", $base, $target);
   if($NEEDSFD) {
     fifo_exec(@cmd);
@@ -285,11 +279,13 @@ sub zfs_agent_perform_dataset {
   unless($ZFS && $DSET) {
     die "zfs_agent_perform_dataset: bad args\n"
   }
+  run_pre_cmd $ZFS;
   if ($DSET_RECURSE) {
     `__ZFS__ snapshot -r $target`;
   } else {
     `__ZFS__ snapshot $target`;
   }
+  run_post_cmd $ZFS;
   # $BASE (the base snapshot) is optional. If provided, send an incremental
   # snapshot
   my @cmd = ("__ZFS__", "send");
@@ -388,12 +384,18 @@ sub fifo_exec {
   waitpid($pid, 0);
 }
 
-sub zfs_agent_run_pre_cmd {
-    `$conf{pre_cmd}`;
+sub run_pre_cmd {
+    my $dataset = shift;
+    if ($conf{$pre_cmd}) {
+        `$conf{pre_cmd} $dataset`;
+    }
 }
 
-sub zfs_agent_run_post_cmd {
-    `$conf{post_cmd}`;
+sub run_post_cmd {
+    my $dataset = shift;
+    if ($conf{$post_cmd}) {
+        `$conf{post_cmd} $dataset`;
+    }
 }
 
 if($LIST) { zfs_agent_list(); exit; }
@@ -402,8 +404,6 @@ if($ZFS && $RESTORE) { zfs_agent_perform_restore(); exit; }
 if($ZFS && $FULL) { zfs_agent_perform_full(); exit; }
 if($ZFS && $DSET) { zfs_agent_perform_dataset(); exit; }
 if($ZFS && $BASE) { zfs_agent_perform_incremental(); exit; }
-if($PRECMD && $conf{pre_cmd}) { zfs_agent_run_pre_cmd(); exit; }
-if($POSTCMD && $conf{post_cmd}) { zfs_agent_run_post_cmd(); exit; }
 
 =pod
 

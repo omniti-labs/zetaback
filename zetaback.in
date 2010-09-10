@@ -1314,10 +1314,6 @@ sub plan_and_run($$$) {
   # We need a lock for the listing.
   return unless(lock($host, ".list"));
 
-  print " => Running pre_command (ssh $ssh_config $host $agent -rpr)\n"
-    if ($DEBUG);
-  `ssh $ssh_config $host $agent -rpr`;
-
   my $took_action = 1;
   while($took_action) {
     $took_action = 0;
@@ -1448,9 +1444,6 @@ sub plan_and_run($$$) {
       last if($took_action);
     }
   }
-  print " => Running post_command (ssh $ssh_config $host $agent -rpo)\n"
-    if ($DEBUG);
-  `ssh $ssh_config $host $agent -rpo`;
   unlock($host, '.list', 1);
 }
 
