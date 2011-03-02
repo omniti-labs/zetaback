@@ -555,6 +555,7 @@ sub scan_for_backups($) {
   return \%info if ($@);
   my $rv = open(ZFSLIST, "__ZFS__ list -H -r -t snapshot $storefs |");
   return \%info unless $rv;
+  my $lastfs = '';
   while (<ZFSLIST>) {
       my @F = split(' ');
       my ($rawfs, $snap) = split('@', $F[0]);
@@ -567,6 +568,12 @@ sub scan_for_backups($) {
       } else {
         $fs = $rawfs;
         $fs =~ s+$storefs/++;
+        # Skip child filesystems of any snapshots. This relies on the fact
+        # that the filesystem listing is in order
+        if ($lastfs && $fs =~ /^$lastfs/) {
+          next
+        }
+        $lastfs = $fs;
       }
       # Treat a dataset backup as a full backup from the point of view of the
       # backup lists
@@ -961,7 +968,11 @@ sub perform_retention($$) {
         if ($filename) {
           unlink($filename) || print "ERROR: unlink $filename: $?\n";
         } elsif ($dataset) {
-          `__ZFS__ destroy $dataset`;
+          if (config_get($host, 'dataset_recursive') == 1) {
+            `__ZFS__ destroy -r $dataset`;
+          } else {
+            `__ZFS__ destroy $dataset`;
+          }
           if ($?) {
             print "ERROR: zfs destroy $dataset: $?\n";
           }
