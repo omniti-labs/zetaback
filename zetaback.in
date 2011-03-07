@@ -570,7 +570,7 @@ sub scan_for_backups($) {
         $fs =~ s+$storefs/++;
         # Skip child filesystems of any snapshots. This relies on the fact
         # that the filesystem listing is in order
-        if ($lastfs && $fs =~ /^$lastfs/) {
+        if ($lastfs && $fs ne $lastfs && $fs =~ /^$lastfs/) {
           next
         }
         $lastfs = $fs;
