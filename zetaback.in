@@ -876,6 +876,26 @@ sub perform_retention($$) {
     my @fulls = grep { exists($info->{full}->{$_}) } @backup_points;
     push(@{$must_save{$fulls[0]}}, "most recent full");
 
+    # Don't delete any backups where the defer_destroy property is already
+    # set - they're going to be deleted anyway soon.
+    if (defer_destroy_enabled()) {
+      my $dataset;
+      foreach my $point (@backup_points) {
+        if(exists($info->{full}->{$_}->{dataset})) {
+          $dataset = $info->{full}->{$_}->{dataset};
+        } elsif(exists($info->{incremental}->{$_}->{dataset})) {
+          $dataset = $info->{incremental}->{$_}->{dataset};
+        } else {
+          next;
+        }
+        my $value = `__ZFS__ get -H -o value defer_destroy $dataset`;
+        chomp $value;
+        if ($value eq 'on') {
+          push(@{$must_save{$point}}, "already marked for deferred destroy");
+        }
+      }
+    }
+
     # Process retention policy
     my @parts = split(/;/, $retention);
     my %retention_map;
@@ -960,7 +980,7 @@ sub perform_retention($$) {
         print " [". (exists($info->{full}->{$_}) ? "full":"incremental") ."]";
         if (exists($must_save{$_})) {
           my $reason = join(", ", @{$must_save{$_}});
-          print " => keep ($reason)";
+          print " => don't remove ($reason)";
         } else {
           print " => remove";
         }
