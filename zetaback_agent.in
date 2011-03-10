@@ -11,7 +11,7 @@ use Data::Dumper;
 
 use vars qw/%conf $version_string
             $PREFIX $CONF $LIST $FULL $SNAP $ZFS $BASE $RESTORE $VERSION
-            $BUG_6343779 $NEEDSFD $DSET $DSET_RECURSE/;
+            $BUG_6343779 $NEEDSFD $DSET $DSET_RECURSE $DEFER_DESTROY/;
 $version_string = '0.1';
 $PREFIX = q^__PREFIX__^;
 $CONF = qq^$PREFIX/etc/zetaback_agent.conf^;
@@ -218,6 +218,22 @@ open(CONF, "<$CONF");
 while(<CONF>) { /^\s*([^#](?:\S*)?)\s*=\s*(\S+)/ && ($conf{lc($1)} = $2); }
 close(CONF);
 
+sub defer_destroy_enabled() {
+  # Check for deferred destroy support by looking for the validity of the
+  # defer_destroy property.
+  if (!defined($DEFER_DESTROY)) {
+    # We don't care about the output, just the return code
+    system('__ZFS__ get defer_destroy somefakefsname');
+    if ($? == 2) {
+      # Invalid zfs property - deferred destroy not supported
+      $DEFER_DESTROY = 0;
+    } else {
+      $DEFER_DESTROY = 1;
+    }
+  }
+  return $DEFER_DESTROY;
+}
+
 sub zfs_agent_remove_snap {
   my $target = $ZFS . '@';
   die "zfs_agent_remove_snap: insufficient args\n" unless($ZFS && $SNAP);
@@ -229,12 +245,17 @@ sub zfs_agent_remove_snap {
   else {
     die "zfs_agent_remove_snap: illegal snap: $SNAP\n";
   }
+
+  my $defer = '';
+  if (defer_destroy_enabled()) {
+    $defer = '-d';
+  }
   if ($DSET_RECURSE) {
     # If we recursively destroy a snapshot, snapshots with the same name in
     # child filesystems are deleted also
-    `__ZFS__ destroy -r $target`;
+    `__ZFS__ destroy -r $defer $target`;
   } else {
-    `__ZFS__ destroy $target`;
+    `__ZFS__ destroy $defer $target`;
   }
 }
 

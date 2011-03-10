@@ -19,7 +19,7 @@ use vars qw/%conf %locks $version_string
             $RESTORE $RESTORE_HOST $RESTORE_ZFS $TIMESTAMP
             $LIST $SUMMARY $SUMMARY_EXT $SUMMARY_VIOLATORS
             $FORCE_FULL $FORCE_INC $EXPUNGE $NEUTERED $ZFS
-            $SHOW_FILENAMES $ARCHIVE $VERSION $HELP/;
+            $SHOW_FILENAMES $ARCHIVE $VERSION $HELP $DEFER_DESTROY/;
 $version_string = q$URL$;
 $version_string =~ s#/branches/#/b#;
 $version_string =~ s#^.*/([^/]+)/[^/]+$#$1#;
@@ -453,6 +453,21 @@ sub parse_config() {
 sub config_get($$) {
   return $conf{$_[0]}->{$_[1]} || $conf{'default'}->{$_[1]};
 }
+sub defer_destroy_enabled() {
+  # Check for deferred destroy support by looking for the validity of the
+  # defer_destroy property.
+  if (!defined($DEFER_DESTROY)) {
+    # We don't care about the output, just the return code
+    system('__ZFS__ get defer_destroy somefakefsname');
+    if ($? == 2) {
+      # Invalid zfs property - deferred destroy not supported
+      $DEFER_DESTROY = 0;
+    } else {
+      $DEFER_DESTROY = 1;
+    }
+  }
+  return $DEFER_DESTROY;
+}
 
 sub fs_encode($) {
   my $d = shift;
@@ -719,7 +734,11 @@ sub zfs_do_backup($$$$$$;$) {
       if (config_get($host, 'dataset_recursive') == 1) {
         my ($out, $fslist);
         print STDERR "Destroying any existing clones\n" if $DEBUG;
-        $out = `__ZFS__ destroy -r $storefs/cloned/$fsname 2>&1`;
+        my $defer = '';
+        if (defer_destroy_enabled()) {
+          $defer = '-d';
+        }
+        $out = `__ZFS__ destroy $defer -r $storefs/cloned/$fsname 2>&1`;
         print $out if $DEBUG;
         print STDERR "Cloning $storefs/$fsname\@__zb_dset_$point to " .
           "$storefs/cloned/$fsname\n" if $DEBUG;
@@ -968,13 +987,17 @@ sub perform_retention($$) {
         if ($filename) {
           unlink($filename) || print "ERROR: unlink $filename: $?\n";
         } elsif ($dataset) {
+          my $defer = '';
+          if (defer_destroy_enabled()) {
+            $defer = '-d';
+          }
           if (config_get($host, 'dataset_recursive') == 1) {
-            `__ZFS__ destroy -r $dataset`;
+            `__ZFS__ destroy -r $defer $dataset`;
           } else {
-            `__ZFS__ destroy $dataset`;
+            `__ZFS__ destroy $defer $dataset`;
           }
           if ($?) {
-            print "ERROR: zfs destroy $dataset: $?\n";
+            print "ERROR: zfs destroy $defer $dataset: $?\n";
           }
         }
       }
