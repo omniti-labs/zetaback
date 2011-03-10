@@ -327,19 +327,19 @@ sub zfs_agent_perform_dataset {
 
 sub zfs_agent_list {
   my %zfs;
-  open(ZFSLIST, "__ZFS__ list -H -t snapshot,filesystem,volume |");
+  open(ZFSLIST, "__ZFS__ list -H -o name,com.omniti.labs.zetaback:exclude -t snapshot,filesystem,volume |");
   while(<ZFSLIST>) {
     chomp;
     my @line = split /\t/;
-    (my $fs = $line[0]) =~ s/\@.+//;
-    my $excl = (split(/\s+/,`__ZFS__ get -H com.omniti.labs.zetaback:exclude $fs`))[2];
-    if(($excl ne "on") && ($fs =~ /$conf{pattern}/)) {
-      my $fsname = $line[0];
-      my $snapname = "";
-      if($line[0] =~ /(\S+)\@([^\@]+)$/) {
-        $fsname = $1;
-        $snapname = $2;
-      }
+    my $fsname = $line[0];
+    my $snapname = "";
+    if($line[0] =~ /(\S+)\@([^\@]+)$/) {
+      $fsname = $1;
+      $snapname = $2;
+    }
+    my $excl = $line[1];
+
+    if(($excl ne "on") && ($fsname =~ /$conf{pattern}/)) {
       if ($DSET_RECURSE) {
         # We don't display child filesystems if the parent has already been
         # listed and we are using zfs send -R
