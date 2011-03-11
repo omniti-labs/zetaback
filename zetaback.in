@@ -881,10 +881,10 @@ sub perform_retention($$) {
     if (defer_destroy_enabled()) {
       my $dataset;
       foreach my $point (@backup_points) {
-        if(exists($info->{full}->{$_}->{dataset})) {
-          $dataset = $info->{full}->{$_}->{dataset};
-        } elsif(exists($info->{incremental}->{$_}->{dataset})) {
-          $dataset = $info->{incremental}->{$_}->{dataset};
+        if(exists($info->{full}->{$point}->{dataset})) {
+          $dataset = $info->{full}->{$point}->{dataset};
+        } elsif(exists($info->{incremental}->{$point}->{dataset})) {
+          $dataset = $info->{incremental}->{$point}->{dataset};
         } else {
           next;
         }

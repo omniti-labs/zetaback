@@ -84,6 +84,7 @@ default {
     full_interval = 604800
     dataset_backup = 1
     dataset_recursive = 1
+    retention = 10
 }
 
 $HOSTNAME { }
