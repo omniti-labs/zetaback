@@ -19,7 +19,8 @@ use vars qw/%conf %locks $version_string
             $RESTORE $RESTORE_HOST $RESTORE_ZFS $TIMESTAMP
             $LIST $SUMMARY $SUMMARY_EXT $SUMMARY_VIOLATORS
             $FORCE_FULL $FORCE_INC $EXPUNGE $NEUTERED $ZFS
-            $SHOW_FILENAMES $ARCHIVE $VERSION $HELP $DEFER_DESTROY/;
+            $SHOW_FILENAMES $ARCHIVE $VERSION $HELP $DEFER_DESTROY
+            @ZPOOL_VERSION/;
 $version_string = q$URL$;
 $version_string =~ s#/branches/#/b#;
 $version_string =~ s#^.*/([^/]+)/[^/]+$#$1#;
@@ -453,8 +454,9 @@ sub parse_config() {
 sub config_get($$) {
   return $conf{$_[0]}->{$_[1]} || $conf{'default'}->{$_[1]};
 }
-sub defer_destroy_enabled() {
-  # Check for deferred destroy support by looking for the validity of the
+sub defer_destroy_enabled {
+  my $pool = shift;
+  # Check for OS deferred destroy support by looking for the validity of the
   # defer_destroy property.
   if (!defined($DEFER_DESTROY)) {
     # We don't care about the output, just the return code
@@ -466,9 +468,23 @@ sub defer_destroy_enabled() {
       $DEFER_DESTROY = 1;
     }
   }
+  # Check the zpool version if provided to make sure we support deferred
+  # destroy on the pool also
+  if ($DEFER_DESTROY && defined($pool)) {
+    if (!defined($ZPOOL_VERSION[$pool])) {
+      my $out = `zpool get version $pool`;
+      my @lines = split(/\n/, $out);
+      my @fields = split(/ +/, $lines[1]);
+      $ZPOOL_VERSION[$pool] = $fields[2];
+    }
+    if ($ZPOOL_VERSION[$pool] >= 18) {
+      return 1;
+    } else {
+      return 0;
+    }
+  }
   return $DEFER_DESTROY;
 }
-
 sub fs_encode($) {
   my $d = shift;
   my @parts = split('@', $d);
@@ -735,7 +751,7 @@ sub zfs_do_backup($$$$$$;$) {
         my ($out, $fslist);
         print STDERR "Destroying any existing clones\n" if $DEBUG;
         my $defer = '';
-        if (defer_destroy_enabled()) {
+        if (defer_destroy_enabled((split(/\//, $storefs))[0])) {
           $defer = '-d';
         }
         $out = `__ZFS__ destroy $defer -r $storefs/cloned/$fsname 2>&1`;
@@ -1008,7 +1024,7 @@ sub perform_retention($$) {
           unlink($filename) || print "ERROR: unlink $filename: $?\n";
         } elsif ($dataset) {
           my $defer = '';
-          if (defer_destroy_enabled()) {
+          if (defer_destroy_enabled((split(/\//, $dataset))[0])) {
             $defer = '-d';
           }
           if (config_get($host, 'dataset_recursive') == 1) {

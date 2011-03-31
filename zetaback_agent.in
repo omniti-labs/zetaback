@@ -11,7 +11,8 @@ use Data::Dumper;
 
 use vars qw/%conf $version_string
             $PREFIX $CONF $LIST $FULL $SNAP $ZFS $BASE $RESTORE $VERSION
-            $BUG_6343779 $NEEDSFD $DSET $DSET_RECURSE $DEFER_DESTROY/;
+            $BUG_6343779 $NEEDSFD $DSET $DSET_RECURSE $DEFER_DESTROY
+            @ZPOOL_VERSION/;
 $version_string = '0.1';
 $PREFIX = q^__PREFIX__^;
 $CONF = qq^$PREFIX/etc/zetaback_agent.conf^;
@@ -218,8 +219,9 @@ open(CONF, "<$CONF");
 while(<CONF>) { /^\s*([^#](?:\S*)?)\s*=\s*(\S+)/ && ($conf{lc($1)} = $2); }
 close(CONF);
 
-sub defer_destroy_enabled() {
-  # Check for deferred destroy support by looking for the validity of the
+sub defer_destroy_enabled($) {
+  my $pool = shift;
+  # Check for OS deferred destroy support by looking for the validity of the
   # defer_destroy property.
   if (!defined($DEFER_DESTROY)) {
     # We don't care about the output, just the return code
@@ -231,7 +233,20 @@ sub defer_destroy_enabled() {
       $DEFER_DESTROY = 1;
     }
   }
-  return $DEFER_DESTROY;
+  # Check the zpool version to make sure we support deferred destroy in that
+  # also
+  if ($DEFER_DESTROY) {
+    if (!defined($ZPOOL_VERSION[$pool])) {
+      my $out = `zpool get version $pool`;
+      my @lines = split(/\n/, $out);
+      my @fields = split(/ +/, $lines[1]);
+      $ZPOOL_VERSION[$pool] = $fields[2];
+    }
+    if ($ZPOOL_VERSION[$pool] >= 18) {
+        return 1;
+    }
+  }
+  return 0;
 }
 
 sub zfs_agent_remove_snap {
@@ -247,7 +262,7 @@ sub zfs_agent_remove_snap {
   }
 
   my $defer = '';
-  if (defer_destroy_enabled()) {
+  if (defer_destroy_enabled((split(/\//, $target))[0])) {
     $defer = '-d';
   }
   if ($DSET_RECURSE) {
