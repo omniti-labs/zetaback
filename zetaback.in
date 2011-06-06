@@ -666,6 +666,10 @@ sub zfs_do_backup($$$$$$;$) {
 
   # compression is meaningless for dataset backups
   if ($type ne "s") {
+    # Store the name of the currently transferring snapshot in a file
+    open(CURRENT, ">$store/zetaback.in-progress");
+    print CURRENT "$store/.$dumpname\n";
+    close(CURRENT);
     my $cl = config_get($host, 'compressionlevel');
     if ($cl >= 1 && $cl <= 9) {
         open(LBACKUP, "|gzip -$cl >$store/.$dumpname $DEBUGLOG") ||
@@ -697,6 +701,10 @@ sub zfs_do_backup($$$$$$;$) {
     }
     print STDERR "Receiving to zfs filesystem $storefs/$fsname\n"
       if($DEBUG);
+    # Store the name of the currently transferring snapshot in a file
+    open(CURRENT, ">$store/zetaback.in-progress");
+    print CURRENT "$storefs/$fsname\n";
+    close(CURRENT);
     if (config_get($host, 'dataset_recursive') == 1) {
       # We need to create filesystems as deep as the poolname and receive to
       # that in order to preserve the exact layout
@@ -803,8 +811,10 @@ sub zfs_do_backup($$$$$$;$) {
     chomp(my $error = $@);
     $error =~ s/[\r\n]+/ /gsm;
     zetaback_log($host, "FAILED[$error] $host:$fs $type\n");
+    unlink("$store/zetaback.in-progress");
     die "zfs_full_backup: failed $@";
   }
+  unlink("$store/zetaback.in-progress");
   my $size;
   if ($type ne "s") {
     my @st = stat("$store/$dumpname");
