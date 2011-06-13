@@ -658,6 +658,8 @@ sub zfs_remove_snap($$$) {
 sub zfs_do_backup($$$$$$;$) {
   my ($host, $fs, $type, $point, $store, $dumpname, $base) = @_;
   my ($storefs, $fsname);
+  my $basestore = config_get($host, 'store');
+  $basestore =~ s/\/?%h//g;
   my $agent = config_get($host, 'agent');
   my $ssh_config = config_get($host, 'ssh_config');
   my $DEBUGLOG="2>>/tmp/zetaback_command_output" if ($DEBUG);
@@ -686,13 +688,15 @@ sub zfs_do_backup($$$$$$;$) {
     if ($@) {
       # The zfs filesystem doesn't exist, so we have to work out what it
       # would be
-      my $basestore = config_get($host, 'store');
-      $basestore =~ s/\/?%h//g;
       $storefs = get_fs_from_mountpoint($basestore);
       $storefs="$storefs/$host";
     }
     my $recvopt = "";
     $fsname = $dumpname;
+    # Store the name of the currently transferring snapshot in a file
+    open(CURRENT, ">$basestore/zetaback.in-progress");
+    print CURRENT "$storefs/$fsname\n";
+    close(CURRENT);
     if (config_get($host, 'dataset_recursive') == 1) {
       $recvopt = "-u -d";
       $fsname =~ s/@.*$//;
@@ -701,10 +705,6 @@ sub zfs_do_backup($$$$$$;$) {
     }
     print STDERR "Receiving to zfs filesystem $storefs/$fsname\n"
       if($DEBUG);
-    # Store the name of the currently transferring snapshot in a file
-    open(CURRENT, ">$store/zetaback.in-progress");
-    print CURRENT "$storefs/$fsname\n";
-    close(CURRENT);
     if (config_get($host, 'dataset_recursive') == 1) {
       # We need to create filesystems as deep as the poolname and receive to
       # that in order to preserve the exact layout
@@ -811,10 +811,10 @@ sub zfs_do_backup($$$$$$;$) {
     chomp(my $error = $@);
     $error =~ s/[\r\n]+/ /gsm;
     zetaback_log($host, "FAILED[$error] $host:$fs $type\n");
-    unlink("$store/zetaback.in-progress");
+    unlink("$basestore/zetaback.in-progress");
     die "zfs_full_backup: failed $@";
   }
-  unlink("$store/zetaback.in-progress");
+  unlink("$basestore/zetaback.in-progress");
   my $size;
   if ($type ne "s") {
     my @st = stat("$store/$dumpname");
