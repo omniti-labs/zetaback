@@ -12,7 +12,7 @@ use Data::Dumper;
 use vars qw/%conf $version_string
             $PREFIX $CONF $LIST $FULL $SNAP $ZFS $BASE $RESTORE $VERSION
             $BUG_6343779 $NEEDSFD $DSET/;
-$version_string = '0.1';
+$version_string = '1.0.6';
 $PREFIX = q^__PREFIX__^;
 $CONF = qq^$PREFIX/etc/zetaback_agent.conf^;
 $NEEDSFD = ($^O eq 'darwin') ? 1 : 0;
