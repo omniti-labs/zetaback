@@ -19,8 +19,9 @@ use vars qw/%conf %locks $version_string
             $PREFIX $CONF $BLOCKSIZE $DEBUG $HOST $BACKUP
             $RESTORE $RESTORE_HOST $RESTORE_ZFS $TIMESTAMP
             $LIST $SUMMARY $SUMMARY_EXT $SUMMARY_VIOLATORS
-            $FORCE_FULL $FORCE_INC $EXPUNGE $NEUTERED $ZFS
-            $SHOW_FILENAMES $ARCHIVE $VERSION $HELP/;
+            $SUMMARY_VIOLATORS_VERBOSE $FORCE_FULL $FORCE_INC
+            $EXPUNGE $NEUTERED $ZFS $SHOW_FILENAMES $ARCHIVE
+            $VERSION $HELP/;
 $version_string = '1.0.6';
 $PREFIX = q^__PREFIX__^;
 $CONF = qq^$PREFIX/etc/zetaback.conf^;
@@ -42,7 +43,7 @@ zetaback - perform backup, restore and retention policies for ZFS backups.
 
   zetaback -v
 
-  zetaback [-l | -s | -sx | -sv] [--files] [-c conf] [-d] [-h host] [-z zfs]
+  zetaback [-l|-s|-sx|-sv|-svv] [--files] [-c conf] [-d] [-h host] [-z zfs]
 
   zetaback -a [-c conf] [-d] [-h host] [-z zfs]
 
@@ -65,6 +66,7 @@ GetOptions(
   "s"       => \$SUMMARY,
   "sx"      => \$SUMMARY_EXT,
   "sv"      => \$SUMMARY_VIOLATORS,
+  "svv"     => \$SUMMARY_VIOLATORS_VERBOSE,
   "r"       => \$RESTORE,
   "t=i"     => \$TIMESTAMP,
   "rhost=s" => \$RESTORE_HOST,
@@ -87,6 +89,7 @@ $actions++ if($LIST);
 $actions++ if($SUMMARY);
 $actions++ if($SUMMARY_EXT);
 $actions++ if($SUMMARY_VIOLATORS);
+$actions++ if($SUMMARY_VIOLATORS_VERBOSE);
 $actions++ if($VERSION);
 $actions++ if($BACKUP && $FORCE_FULL && $FORCE_INC);
 if($actions != 1) {
@@ -196,6 +199,17 @@ Display all backups in the current store that violate the configured
 backup policy. This is where the most recent full backup is older than
 full_interval seconds ago, or the most recent incremental backup is older
 than backup_interval seconds ago.
+
+If, at the time of the most recent backup, a filesystem no longer exists on
+the server (because it was deleted), then backups of this filesystem are not
+included in the list of violators. To include these filesystems, use the -svv
+option instead.
+
+=item -svv
+
+The violators summary will exclude backups of filesystems that are no longer
+on the server in the list of violators. Use this option to include those
+filesystems.
 
 =item --files
 
@@ -1313,6 +1327,17 @@ sub show_backups($$) {
 
 sub show_violators($$) {
   my ($host, $diskpat) = @_;
+  my $host_store = get_store($host);
+  my $filesystems = {};
+  if (open (my $fh, "$host_store/.fslist")) {
+    while (<$fh>) {
+      chomp;
+      $filesystems->{$_} = 1;
+    }
+    close($fh);
+  } elsif ($DEBUG) {
+    print "=> $host_store/.fslist not present, skipping missing FS detection\n";
+  }
   foreach my $class (get_classes()) {
     if ($DEBUG) {
       if ($class) {
@@ -1333,6 +1358,14 @@ sub show_violators($$) {
           ($diskpat =~ /^\/(.+)\/$/ && $disk =~ /$1/) # or a regex
         )
       ); # regex
+      # Backups for filesystems that no longer exist aren't violators
+      if (!$SUMMARY_VIOLATORS_VERBOSE && %{$filesystems} &&
+        !defined $filesystems->{$disk}) {
+        print "=> $disk doesn't exist on server, not marking as violator\n"
+          if ($DEBUG);
+        next;
+      }
+
 
       my @violators = ();
 
@@ -1391,7 +1424,16 @@ sub plan_and_run($$) {
     next unless $rv;
     @disklist = grep { chomp } (<ZFSLIST>);
     close(ZFSLIST);
-
+    # Write the filesystem list out to a file for use by the violators list
+    my $store = get_store($host); # Don't take classes into account - not needed
+    mkpath($store) if(! -d $store);
+    open(my $fh, ">$store/.fslist");
+    foreach my $diskline (@disklist) {
+      # Get only the filesystem and not the snapshots/classes
+      (my $filesystem = $diskline) =~ s/ \[.*//;
+      print $fh "$filesystem\n";
+    }
+    close($fh);
     if ($DEBUG) {
       print " => Filesystems for $host (zetaback_agent -l output)\n";
       foreach my $diskline (@disklist) {
@@ -1538,7 +1580,7 @@ else {
     if($LIST || $SUMMARY || $SUMMARY_EXT || $ARCHIVE) {
       show_backups($host, $ZFS);
     }
-    if ($SUMMARY_VIOLATORS) {
+    if ($SUMMARY_VIOLATORS || $SUMMARY_VIOLATORS_VERBOSE) {
       show_violators($host, $ZFS);
     }
     if($BACKUP) {
