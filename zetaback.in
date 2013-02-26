@@ -15,7 +15,7 @@ use File::Copy;
 use IO::File;
 use Pod::Usage;
 
-use vars qw/%conf %locks $version_string
+use vars qw/%conf %locks $version_string $process_lock
             $PREFIX $CONF $BLOCKSIZE $DEBUG $HOST $BACKUP
             $RESTORE $RESTORE_HOST $RESTORE_ZFS $TIMESTAMP
             $LIST $SUMMARY $SUMMARY_EXT $SUMMARY_VIOLATORS
@@ -454,6 +454,23 @@ hours).
 
 =back
 
+=head2 Global Settings
+
+The following settings are only valid in the default scope:
+
+=over
+
+=item process_limit
+
+This setting limits the number of concurrent zetaback processes that can run
+at one time. Zetaback already has locks on hosts and datasets to prevent
+conflicting backups, and this allows you to have multiple zetaback instances
+running in the event a backup takes some time to complete, while still keeping
+a limit on the resources used. If this configuration entry is missing, then no
+limiting will occur.
+
+=back
+
 =head1 CONFIGURATION EXAMPLES
 
 =head2 Uniform hosts
@@ -625,6 +642,24 @@ sub unlock($;$$) {
   flock(UNLOCK, LOCK_UN);
   close(UNLOCK);
   return 1;
+}
+sub limit_running_processes() {
+    my $max = $conf{'default'}->{'process_limit'};
+    return unless defined($max);
+    print "Aquiring process lock\n" if $DEBUG;
+    for (my $i=0; $i < $max; $i++) {
+        my $file = "/tmp/.zetaback_$i.lock";
+        print "$file\n" if $DEBUG;
+        open ($process_lock, "+>>$file") || next;
+        if (flock($process_lock, LOCK_EX | LOCK_NB)) {
+            print "Process lock succeeded: $file\n" if $DEBUG;
+            return 1;
+        } else {
+            close($process_lock);
+        }
+    }
+    print "Too many zetaback processes running. Exiting...\n" if $DEBUG;
+    exit 0;
 }
 sub scan_for_backups($) {
   my %info = ();
@@ -1556,6 +1591,9 @@ sub plan_and_run($$) {
     unlock($host, '.list');
   }
 }
+
+## Start of main program
+limit_running_processes;
 
 if($RESTORE) {
   perform_restore();
