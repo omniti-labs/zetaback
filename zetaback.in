@@ -759,10 +759,10 @@ sub zfs_do_backup($$$$$$;$) {
     my $cl = config_get($host, 'compressionlevel');
     if ($cl >= 1 && $cl <= 9) {
         open(LBACKUP, "|gzip -$cl >$store/.$dumpname") ||
-        die "zfs_full_backup: cannot create dump\n";
+        die "zfs_do_backup $host:$fs $type: cannot create dump\n";
     } else {
         open(LBACKUP, ">$store/.$dumpname") ||
-        die "zfs_full_backup: cannot create dump\n";
+        die "zfs_do_backup $host:$fs $type: cannot create dump\n";
     }
   } else {
     # Dataset backup - pipe received filesystem to zfs recv
@@ -801,9 +801,10 @@ sub zfs_do_backup($$$$$$;$) {
       open STDIN, "/dev/null" || exit(-1);
       open STDOUT, ">&LBACKUP" || exit(-1);
       print STDERR "   => @cmd\n" if($DEBUG);
-      exec { $cmd[0] } @cmd;
-      print STDERR "$cmd[0] failed: $?\n";
-      exit($?);
+      unless (exec { $cmd[0] } @cmd) {
+        print STDERR "$cmd[0] failed: $!\n";
+        exit(1);
+      }
     }
     if ($type ne "s") {
       die "dump failed (zero bytes)\n" if(-z "$store/.$dumpname");
@@ -822,7 +823,7 @@ sub zfs_do_backup($$$$$$;$) {
     chomp(my $error = $@);
     $error =~ s/[\r\n]+/ /gsm;
     zetaback_log($host, "FAILED[$error] $host:$fs $type\n");
-    die "zfs_full_backup: failed $@";
+    die "zfs_do_backup $host:$fs $type: $error";
   }
   my $size;
   if ($type ne "s") {
