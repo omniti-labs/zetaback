@@ -1045,8 +1045,8 @@ sub perform_retention($) {
 
 sub __default_sort($$) { return $_[0] cmp $_[1]; }
     
-sub choose($$;$) {
-  my($name, $obj, $sort) = @_;
+sub choose($$;$$) {
+  my($name, $obj, $many, $sort) = @_;
   $sort ||= \&__default_sort;;
   my @list;
   my $hash;
@@ -1061,20 +1061,49 @@ sub choose($$;$) {
   else {
     die "choose passed bad object: " . ref($obj) . "\n";
   }
-  return $list[0] if(scalar(@list) == 1);
+  return \@list if(scalar(@list) == 1) && $many;
+  return $list[0] if(scalar(@list) == 1) && !$many;
   print "\n";
   my $i = 1;
   for (@list) {
     printf " %3d) $hash->{$_}\n", $i++;
   }
-  my $selection = 0;
-  while($selection !~ /^\d+$/ or
-        $selection < 1 or
-        $selection >= $i) {
-    print "$name: ";
-    chomp($selection = <>);
+  if ($many) {
+    my @selection;
+    my $range;
+    while(1) {
+      print "$name: ";
+      chomp($range = <>);
+      next if ($range !~ /^[\d,-]+$/);
+      my @parts = split(',', $range);
+      foreach my $part (@parts) {
+          my ($from, $to) = ($part =~ /(\d+)(?:-(\d+))?/);
+          if ($from < 1 || $to > scalar(@list)) {
+              print "Invalid range: $from-$to\n";
+              @selection = ();
+              last;
+          }
+          if ($to) {
+            push @selection, @list[$from - 1 .. $to - 1];
+          } else {
+            push @selection, @list[$from - 1];
+          }
+      }
+      if (@selection) {
+          last;
+      }
+    }
+    return \@selection;
+  } else {
+    my $selection = 0;
+    while($selection !~ /^\d+$/ or
+          $selection < 1 or
+          $selection >= $i) {
+      print "$name: ";
+      chomp($selection = <>);
+    }
+    return $list[$selection - 1];
   }
-  return $list[$selection - 1];
 }
 
 sub backup_chain($$) {
@@ -1156,43 +1185,90 @@ sub perform_restore() {
 
   # Here goes the possibly interactive dialog
   my $host = choose("Restore from host",  [keys %source]);
-  my $disk = choose("Restore from ZFS", [keys %{$source{$host}}]);
-  
-  # Times are special.  We build a human readable form and use a numerical
-  # sort function instead of the default lexical one.
-  my %times;
-  my $tf = config_get($host, 'time_format');
-  map { $times{$_} = strftime($tf, localtime($_)); } @{$source{$host}->{$disk}};
-  my $timestamp = choose("Restore as of timestamp", \%times,
-                         sub { $_[0] <=> $_[1]; });
+  my $disks = choose("Restore from ZFS", [keys %{$source{$host}}], 1);
 
-  my $store = get_store($host, $classmap{$host}->{$disk});
-  my $backup_info = scan_for_backups($store);
-  my @backup_list = reverse backup_chain($backup_info->{$disk}, $timestamp);
+  if (scalar(@$disks) > 1) {
+    # We selected multiple backups, only the latest backup of each should be
+    # used
+    print "Multiple filesystems selected, choosing latest backup for each\n";
+    my $backup_list = {};
+    foreach my $disk (@$disks) {
+      my $store = get_store($host, $classmap{$host}->{$disk});
+      my $backup_info = scan_for_backups($store);
+      $backup_list->{$disk} = [ reverse backup_chain($backup_info->{$disk},
+          $backup_info->{$disk}->{last_backup}) ];
+    }
 
-  if(!$RESTORE_HOST) {
-    print "Restore to host [$host]:";
-    chomp(my $input = <>);
-    $RESTORE_HOST = length($input) ? $input : $host;
+    if(!$RESTORE_HOST) {
+      print "Restore to host [$host]:";
+      chomp(my $input = <>);
+      $RESTORE_HOST = length($input) ? $input : $host;
+    }
+    if(!$RESTORE_ZFS) {
+      print "Restore at base zfs (filesystem must exist) []:";
+      chomp(my $input = <>);
+      $RESTORE_ZFS = $input;
+    }
+
+    # show intentions
+    print "Going to restore:\n";
+    print "\tfrom: $host\n";
+    foreach my $disk (@$disks) {
+      print "\tfrom: $disk\n";
+    }
+    print "\t  to: $RESTORE_HOST\n";
+    print "\t  at base zfs: $RESTORE_ZFS\n";
+    print "\n";
+
+    foreach my $disk (@$disks) {
+      print "Restoring: $disk\n";
+      foreach(@{$backup_list->{$disk}}) {
+        my $restore_dataset = $disk;
+        if ($RESTORE_ZFS) {
+          $restore_dataset = "$RESTORE_ZFS/$restore_dataset";
+        }
+        $_->{success} = zfs_restore_part($RESTORE_HOST, $restore_dataset, $_->{file}, $_->{dataset}, $_->{depends});
+      }
+    }
+  } else {
+    my $disk = $disks->[0];
+    # Times are special.  We build a human readable form and use a numerical
+    # sort function instead of the default lexical one.
+    my %times;
+    my $tf = config_get($host, 'time_format');
+    map { $times{$_} = strftime($tf, localtime($_)); } @{$source{$host}->{$disk}};
+    my $timestamp = choose("Restore as of timestamp", \%times, 0,
+                            sub { $_[0] <=> $_[1]; });
+
+    my $store = get_store($host, $classmap{$host}->{$disk});
+    my $backup_info = scan_for_backups($store);
+    my @backup_list = reverse backup_chain($backup_info->{$disk}, $timestamp);
+
+    if(!$RESTORE_HOST) {
+      print "Restore to host [$host]:";
+      chomp(my $input = <>);
+      $RESTORE_HOST = length($input) ? $input : $host;
+    }
+    if(!$RESTORE_ZFS) {
+      print "Restore to zfs [$disk]:";
+      chomp(my $input = <>);
+      $RESTORE_ZFS = length($input) ? $input : $disk;
+    }
+
+    # show intentions
+    print "Going to restore:\n";
+    print "\tfrom: $host\n";
+    print "\tfrom: $disk\n";
+    print "\t  at: $timestamp [" . strftime($tf, localtime($timestamp)) . "]\n";
+    print "\t  to: $RESTORE_HOST\n";
+    print "\t  to: $RESTORE_ZFS\n";
+    print "\n";
+
+    foreach(@backup_list) {
+      $_->{success} = zfs_restore_part($RESTORE_HOST, $RESTORE_ZFS, $_->{file}, $_->{dataset}, $_->{depends});
+    }
   }
-  if(!$RESTORE_ZFS) {
-    print "Restore to zfs [$disk]:";
-    chomp(my $input = <>);
-    $RESTORE_ZFS = length($input) ? $input : $disk;
-  }
 
-  # show intentions
-  print "Going to restore:\n";
-  print "\tfrom: $host\n";
-  print "\tfrom: $disk\n";
-  print "\t  at: $timestamp [" . strftime($tf, localtime($timestamp)) . "]\n";
-  print "\t  to: $RESTORE_HOST\n";
-  print "\t  to: $RESTORE_ZFS\n";
-  print "\n";
-
-  foreach(@backup_list) {
-    $_->{success} = zfs_restore_part($RESTORE_HOST, $RESTORE_ZFS, $_->{file}, $_->{dataset}, $_->{depends});
-  }
 }
 
 sub zfs_restore_part($$$$;$) {
