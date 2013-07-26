@@ -269,6 +269,23 @@ the source backup list.  If the filtered list contains more than one
 source backup image, the command will act interactively.  If the -rhost
 and -rzfs command are not specified, the command will act interactively.
 
+When running interactively, you can choose multiple filesystems from the list
+using ranges. For example 1-4,5,10-11. If you do this, zetaback will enter
+multi-restore mode. In this mode it will automatically select the most recent
+backup, and restore filessytems in bulk.
+
+In multi-restore mode, you have the option to specify a base filesystem to
+restore to. This filesystem will be added as a prefix to the original
+filesystem name, so if you picked a prefix of data/restore, and one of the
+filesystems you are restoring is called data/set/myfilesystem, then the
+filesystem will be restored to data/restore/data/set/myfilesystem.
+
+Note that, just like in regular restore mode, zetaback won't create
+intermediate filesystems for you when restoring, and these should either exist
+beforehand, or you should make sure you pick a set of filesystems that will
+restore the entire tree for you, for example, you should restore data as well
+as data/set before restoring data/set/foo.
+
 =back
 
 =cut
