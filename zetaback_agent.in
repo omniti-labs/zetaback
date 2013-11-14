@@ -262,13 +262,13 @@ sub zfs_agent_perform_dataset {
 
 sub zfs_agent_list {
   my (%zfs, %storageclass);
-  open(ZFSLIST, "__ZFS__ list -H -t snapshot,filesystem,volume |");
+  open(ZFSLIST, "__ZFS__ list -H -t snapshot,filesystem,volume -o name,com.omniti.labs.zetaback:exclude,com.omniti.labs.zetaback:class |");
   while(<ZFSLIST>) {
     chomp;
     my @line = split /\t/;
     (my $fs = $line[0]) =~ s/\@.+//;
-    my $excl = (split(/\s+/,`__ZFS__ get -H com.omniti.labs.zetaback:exclude $fs 2>/dev/null`))[2];
-    my $class = (split(/\s+/,`__ZFS__ get -H com.omniti.labs.zetaback:class $fs 2>/dev/null`))[2];
+    my $excl = $line[1];
+    my $class = $line[2];
     if(($excl ne "on") && ($fs =~ /$conf{pattern}/)) {
       if($line[0] =~ /(\S+)\@([^\@]+)$/) {
         $zfs{$1} ||= [];
