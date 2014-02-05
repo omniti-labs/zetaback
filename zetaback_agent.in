@@ -147,6 +147,12 @@ Once a pattern and/or exclude properties have been configured on a host,
 the list of remaining filesystems can be validated by invoking 
 zetaback_agent with the -l option.
 
+=head2 Excluding inactive boot environments
+
+The zetaback_agent configuration file also has an option to not back up filesystems that are part of an alternate/inactive boot environment. To enable this option, add the following to the configuration file:
+
+  exclude_inactive_be=1
+
 =head1 CONFIGURATION EXAMPLES
 
 =head2 All ZFS filesystems
@@ -188,6 +194,7 @@ All filesystems in pool 'zones' except 'foo'
 
 # Read our config in
 $conf{pattern} = '.';
+$conf{exclude_inactive_be} = '0';
 open(CONF, "<$CONF");
 while(<CONF>) { /^\s*([^#](?:\S*)?)\s*=\s*(\S+)/ && ($conf{lc($1)} = $2); }
 close(CONF);
@@ -262,13 +269,25 @@ sub zfs_agent_perform_dataset {
 
 sub zfs_agent_list {
   my (%zfs, %storageclass);
-  open(ZFSLIST, "__ZFS__ list -H -t snapshot,filesystem,volume -o name,com.omniti.labs.zetaback:exclude,com.omniti.labs.zetaback:class |");
+  open(ZFSLIST, "__ZFS__ list -H -t snapshot,filesystem,volume -o name,com.omniti.labs.zetaback:exclude,com.omniti.labs.zetaback:class,org.opensolaris.libbe:parentbe,org.opensolaris.libbe:uuid |");
+  # Get the UUID (if any) of the current BE, should return blank on systems
+  # where beadm isn't present
+  my $currentbe = "";
+  if($conf{exclude_inactive_be} eq '1') {
+    $currentbe = (split(/;/,`/sbin/beadm list -H 2>&1 | grep ';N'`))[1];
+  }
   while(<ZFSLIST>) {
     chomp;
     my @line = split /\t/;
     (my $fs = $line[0]) =~ s/\@.+//;
     my $excl = $line[1];
     my $class = $line[2];
+    my $parentbe = $line[3];
+    my $beuuid = $line[4];
+    if($conf{exclude_inactive_be} eq '1') {
+        next if ($parentbe ne '-' && $parentbe ne $currentbe);
+        next if ($beuuid ne '-' && $beuuid ne $currentbe);
+    }
     if(($excl ne "on") && ($fs =~ /$conf{pattern}/)) {
       if($line[0] =~ /(\S+)\@([^\@]+)$/) {
         $zfs{$1} ||= [];
