@@ -798,7 +798,7 @@ sub zfs_do_backup($$$$$$;$) {
     print STDERR "Receiving to zfs filesystem $storefs/$encodedname\n"
       if($DEBUG);
     zfs_create_intermediate_filesystems("$storefs/$encodedname");
-    open(LBACKUP, "|__ZFS__ recv $storefs/$encodedname");
+    open(LBACKUP, "|__ZFS__ recv -F $storefs/$encodedname");
   }
   # Do it. yeah.
   eval {
@@ -1304,7 +1304,7 @@ sub zfs_restore_part($$$$;$) {
     $command .= " -b $dep" if($dep);
   }
   else {
-    $command = "__ZFS__ recv $fs";
+    $command = "__ZFS__ recv -F $fs";
   }
   if ($file) {
     print " => piping $file to $command\n" if($DEBUG);
