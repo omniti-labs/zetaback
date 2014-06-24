@@ -1630,7 +1630,7 @@ sub plan_and_run($$) {
       # We need to drop a __zb_base snap or a __zb_incr snap before we proceed
       unless($NEUTERED || $backup_type eq 'no') {
         # attempt to lock this action, if it fails, skip -- someone else is working it.
-        next unless(lock($host, dir_encode($diskname), 1));
+        next unless(lock($host, dir_encode($diskname) . ".lock", 1));
         unlock($host, '.list');
 
         if($backup_type eq 'full') {
@@ -1677,7 +1677,7 @@ sub plan_and_run($$) {
           }
           $took_action = 1;
         }
-        unlock($host, dir_encode($diskname), 1);
+        unlock($host, dir_encode($diskname) . ".lock", 1);
       }
       $suppress{"$host:$diskname"} = 1;
       last if($took_action);
