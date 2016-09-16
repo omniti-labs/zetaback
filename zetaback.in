@@ -639,9 +639,13 @@ sub lock($;$$) {
   my $store = get_store($host); # Don't take classes into account - not needed
   mkpath($store) if(! -d $store);
   return 1 if(exists($locks{"$host:$file"}));
-  open(LOCK, "+>>$store/$file") || return 0;
+  unless (open(LOCK, "+>>$store/$file")) {
+    print STDERR "Cannot open: $store/$file\n" if $DEBUG;
+    return 0;
+  }
   unless(flock(LOCK, LOCK_EX | ($nowait ? LOCK_NB : 0))) {
     close(LOCK);
+    print STDERR "Lock failed: $host:$file\n" if $DEBUG;
     return 0;
   }
   $locks{"$host:$file"} = \*LOCK;
@@ -755,8 +759,10 @@ sub zfs_remove_snap($$$) {
   my ($host, $fs, $snap) = @_;
   my $agent = config_get($host, 'agent');
   my $ssh_config = config_get($host, 'ssh_config');
-  $ssh_config = "-F $ssh_config" if($ssh_config);
-  print "Using custom ssh config file: $ssh_config\n" if($DEBUG);
+  if($ssh_config) {
+    $ssh_config = "-F $ssh_config";
+    print STDERR "Using custom ssh config file: $ssh_config\n" if($DEBUG);
+  }
   return unless($snap);
   print "Dropping $snap on $fs\n" if($DEBUG);
   `ssh $ssh_config $host $agent -z $fs -d $snap`;
@@ -768,8 +774,10 @@ sub zfs_do_backup($$$$$$;$) {
   my ($storefs, $encodedname);
   my $agent = config_get($host, 'agent');
   my $ssh_config = config_get($host, 'ssh_config');
-  $ssh_config = "-F $ssh_config" if($ssh_config);
-  print "Using custom ssh config file: $ssh_config\n" if($DEBUG);
+  if($ssh_config) {
+    $ssh_config = "-F $ssh_config";
+    print STDERR "Using custom ssh config file: $ssh_config\n" if($DEBUG);
+  }
 
   # compression is meaningless for dataset backups
   if ($type ne "s") {
@@ -804,8 +812,11 @@ sub zfs_do_backup($$$$$$;$) {
   eval {
     if(my $pid = fork()) {
       close(LBACKUP);
-      waitpid($pid, 0);
-      die "error: $?" if($?);
+      die "Errno: $!" if (waitpid($pid, 0) == -1);
+      my $ev = ($? >> 8);
+      my $sn = $? & 127;
+      die "Child signal number: $sn" if ($sn);
+      die "Child exit value: $ev" if ($ev);
     }
     else {
       my @cmd = ('ssh', split(/ /, $ssh_config), $host, $agent, '-z', $fs);
@@ -1295,8 +1306,10 @@ sub zfs_restore_part($$$$;$) {
     return 1;
   }
   my $ssh_config = config_get($host, 'ssh_config');
-  $ssh_config = "-F $ssh_config" if($ssh_config);
-  print "Using custom ssh config file: $ssh_config\n" if($DEBUG);
+  if($ssh_config) {
+    $ssh_config = "-F $ssh_config";
+    print STDERR "Using custom ssh config file: $ssh_config\n" if($DEBUG);
+  }
   my $command;
   if(exists($conf{$host})) {
     my $agent = config_get($host, 'agent');
