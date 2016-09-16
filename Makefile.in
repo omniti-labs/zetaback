@@ -20,21 +20,33 @@ zfs=@ZFS@
 perl=@PERL@
 pod2man=@POD2MAN@
 
-all:
+all: build man
+
+build: zetaback zetaback_agent
+
+zetaback: zetaback.in
 	sed -e "s#/usr/bin/perl#$(perl)#;" -e "s#__PREFIX__#$(prefix)#;" \
 		-e "s#__ZFS__#$(zfs)#;" \
 	< zetaback.in > zetaback
+
+zetaback_agent: zetaback_agent.in
 	sed -e "s#/usr/bin/perl#$(perl)#;" -e "s#__PREFIX__#$(prefix)#;" \
 		-e "s#__ZFS__#$(zfs)#;" \
 	< zetaback_agent.in > zetaback_agent
+
+man: zetaback.1 zetaback_agent.1
+
+zetaback.1: zetaback
+	$(pod2man) zetaback zetaback.1
+
+zetaback_agent.1: zetaback_agent
+	$(pod2man) zetaback_agent zetaback_agent.1
 
 install: all
 	$(mkinstalldirs) ${DESTDIR}${bindir}
 	$(mkinstalldirs) ${DESTDIR}${sysconfdir}
 	$(mkinstalldirs) ${DESTDIR}${mandir}
 	$(mkinstalldirs) ${DESTDIR}${mandir}/man1
-	$(pod2man) zetaback zetaback.1
-	$(pod2man) zetaback_agent zetaback_agent.1
 	$(install) -m 0755 zetaback ${DESTDIR}${bindir}/zetaback
 	$(install) -m 0755 zetaback_agent ${DESTDIR}${bindir}/zetaback_agent
 	$(install) -m 0644 zetaback.conf ${DESTDIR}${sysconfdir}/zetaback.conf.sample
