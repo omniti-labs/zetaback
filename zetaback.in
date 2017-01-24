@@ -272,7 +272,7 @@ and -rzfs command are not specified, the command will act interactively.
 When running interactively, you can choose multiple filesystems from the list
 using ranges. For example 1-4,5,10-11. If you do this, zetaback will enter
 multi-restore mode. In this mode it will automatically select the most recent
-backup, and restore filessytems in bulk.
+backup, and restore filesystems in bulk.
 
 In multi-restore mode, you have the option to specify a base filesystem to
 restore to. This filesystem will be added as a prefix to the original
