@@ -1,0 +1,22 @@
+Making a Release
+================
+
+1. Update the $version_string variable in zetaback.in and zetaback_agent.in to reflect the new version number and commit this change.
+2. Tag from master (the -s option signs the tag with your gpg key. Use -a instead if you don't want to sign the tag):
+      $ git tag -s -m "Version x.y.z" x.y.z
+      $ git push --tags origin
+
+3. Prepare a tarball on a dev zone:
+      $ mkdir zetaback-x.y.z
+      $ cd zetaback-x.y.z
+      # You should use gtar here, otherwise an extraneous pax_global_header file may be created 
+      $ git archive --remote=git@labs.omniti.com:zetaback.git x.y.z | gtar xvf - 
+      $ /opt/csw/bin/autoconf
+      $ rm -rf autom4te.cache/
+      $ cd ..
+      $ tar cf ~/zetaback-x.y.z.tar zetaback-x.y.z
+      $ gzip ~/zetaback-x.y.z.tar
+
+4. Copy the tarball to mirrors.omniti.com: scp zetaback-x.y.z.tar.gz warehouse:/data/mirrors/mirrors.omniti.com/zetaback
+5. Update the wiki front page to link to the new tarball.
+6. Update /www/website/trunk/htdocs/announcements.rdf on the labs webserver with a new entry announcing the release. Include any relevant highlights and/or bugfixes. Commit the updated file.
