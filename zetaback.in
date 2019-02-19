@@ -806,7 +806,7 @@ sub zfs_do_backup($$$$$$;$) {
     print STDERR "Receiving to zfs filesystem $storefs/$encodedname\n"
       if($DEBUG);
     zfs_create_intermediate_filesystems("$storefs/$encodedname");
-    open(LBACKUP, "|__ZFS__ recv $storefs/$encodedname");
+    open(LBACKUP, "|__ZFS__ recv -F $storefs/$encodedname");
   }
   # Do it. yeah.
   eval {
@@ -1317,7 +1317,7 @@ sub zfs_restore_part($$$$;$) {
     $command .= " -b $dep" if($dep);
   }
   else {
-    $command = "__ZFS__ recv $fs";
+    $command = "__ZFS__ recv -F $fs";
   }
   if ($file) {
     print " => piping $file to $command\n" if($DEBUG);
@@ -1643,7 +1643,7 @@ sub plan_and_run($$) {
       # We need to drop a __zb_base snap or a __zb_incr snap before we proceed
       unless($NEUTERED || $backup_type eq 'no') {
         # attempt to lock this action, if it fails, skip -- someone else is working it.
-        next unless(lock($host, dir_encode($diskname), 1));
+        next unless(lock($host, dir_encode($diskname) . ".lock", 1));
         unlock($host, '.list');
 
         if($backup_type eq 'full') {
@@ -1690,7 +1690,7 @@ sub plan_and_run($$) {
           }
           $took_action = 1;
         }
-        unlock($host, dir_encode($diskname), 1);
+        unlock($host, dir_encode($diskname) . ".lock", 1);
       }
       $suppress{"$host:$diskname"} = 1;
       last if($took_action);
